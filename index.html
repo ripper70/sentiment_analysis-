@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Sentiment Analytics Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+  <style>
+    :root {
+      --bg-primary:   #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-tertiary:  #273548;
+      --border:       #334155;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --accent:       #38bdf8;
+      --positive:     #22c55e;
+      --pos-bg:       rgba(34,197,94,.12);
+      --neutral:      #eab308;
+      --neu-bg:       rgba(234,179,8,.12);
+      --negative:     #ef4444;
+      --neg-bg:       rgba(239,68,68,.12);
+      --shadow: 0 4px 6px -1px rgba(0,0,0,.35), 0 2px 4px -2px rgba(0,0,0,.2);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: linear-gradient(135deg, #0c1525 0%, #1a3a5c 50%, #0c1525 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      background: linear-gradient(90deg, #f1f5f9, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p { font-size: .75rem; color: var(--text-secondary); margin-top: .1rem; }
+    .header-right { display: flex; align-items: center; gap: 1rem; }
+    .last-updated { font-size: .72rem; color: var(--text-secondary); text-align: right; }
+    .badge-live {
+      display: inline-flex; align-items: center; gap: .35rem;
+      background: rgba(34,197,94,.15); border: 1px solid rgba(34,197,94,.3);
+      border-radius: 9999px; padding: .25rem .65rem;
+      font-size: .68rem; color: var(--positive); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    .badge-live::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--positive); animation: blink 2s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.4)} }
+
+    /* ── LAYOUT ── */
+    .container { max-width: 1440px; margin: 0 auto; padding: 1.75rem 2rem; }
+
+    /* ── KPI CARDS ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .kpi-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.4rem;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 3px; border-radius: 12px 12px 0 0;
+    }
+    .kpi-card.c-blue::after   { background: linear-gradient(90deg,#38bdf8,#818cf8); }
+    .kpi-card.c-green::after  { background: linear-gradient(90deg,#22c55e,#86efac); }
+    .kpi-card.c-red::after    { background: linear-gradient(90deg,#ef4444,#fca5a5); }
+    .kpi-card.c-yellow::after { background: linear-gradient(90deg,#eab308,#fde68a); }
+    .kpi-label {
+      font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--text-secondary); margin-bottom: .45rem;
+    }
+    .kpi-value { font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+    .kpi-sub   { font-size: .73rem; color: var(--text-secondary); margin-top: .3rem; }
+    .kpi-icon  {
+      position: absolute; right: 1.1rem; top: 50%; transform: translateY(-50%);
+      font-size: 2.2rem; opacity: .1; pointer-events: none;
+    }
+
+    /* ── CHARTS ROW ── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 3fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+      align-items: start;
+    }
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+    }
+    .card-header { margin-bottom: 1.1rem; }
+    .card-title    { font-size: .95rem; font-weight: 700; }
+    .card-subtitle { font-size: .72rem; color: var(--text-secondary); margin-top: .15rem; }
+    .bar-wrap   { position: relative; height: 610px; }
+    .donut-wrap { position: relative; height: 220px; display: flex; align-items: center; justify-content: center; }
+
+    /* Donut legend */
+    .d-legend { margin-top: 1.1rem; display: flex; flex-direction: column; gap: .55rem; }
+    .d-legend-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: .78rem;
+    }
+    .d-dot { width: 10px; height: 10px; border-radius: 2px; margin-right: .5rem; flex-shrink: 0; }
+    .d-label { flex: 1; color: var(--text-secondary); }
+    .d-pct {
+      font-size: .68rem; font-weight: 700; border-radius: 4px;
+      padding: .1rem .4rem; margin-right: .5rem;
+    }
+    .d-count { font-weight: 700; min-width: 24px; text-align: right; }
+
+    /* ── TABLE ── */
+    .table-controls {
+      display: flex; gap: .65rem; margin-bottom: 1.1rem; flex-wrap: wrap;
+    }
+    .search-box {
+      flex: 1; min-width: 200px;
+      background: var(--bg-tertiary); border: 1px solid var(--border);
+      border-radius: 8px; padding: .5rem .75rem .5rem 2.2rem;
+      color: var(--text-primary); font-size: .85rem; outline: none;
+      transition: border-color .2s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: .65rem center;
+    }
+    .search-box:focus { border-color: var(--accent); }
+    .search-box::placeholder { color: var(--text-secondary); }
+    .sel {
+      background: var(--bg-tertiary); border: 1px solid var(--border);
+      border-radius: 8px; padding: .5rem 2rem .5rem .75rem;
+      color: var(--text-primary); font-size: .85rem; outline: none;
+      cursor: pointer; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right .6rem center;
+    }
+    .sel:focus { border-color: var(--accent); }
+
+    .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    thead th {
+      background: var(--bg-tertiary); padding: .7rem 1rem;
+      text-align: left; font-size: .68rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em;
+      color: var(--text-secondary); white-space: nowrap;
+    }
+    tbody tr { border-top: 1px solid var(--border); transition: background .12s; }
+    tbody tr:hover { background: var(--bg-tertiary); }
+    tbody td { padding: .7rem 1rem; vertical-align: middle; }
+
+    .niche-tag {
+      display: inline-flex; align-items: center; gap: .3rem;
+      background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.18);
+      border-radius: 6px; padding: .18rem .5rem;
+      font-size: .7rem; font-weight: 600; color: var(--accent); white-space: nowrap;
+    }
+    .sent-badge {
+      display: inline-block; border-radius: 6px; padding: .18rem .5rem;
+      font-size: .68rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .sent-badge.positive { background: var(--pos-bg); color: var(--positive); border: 1px solid rgba(34,197,94,.25); }
+    .sent-badge.neutral  { background: var(--neu-bg); color: var(--neutral);  border: 1px solid rgba(234,179,8,.25); }
+    .sent-badge.negative { background: var(--neg-bg); color: var(--negative); border: 1px solid rgba(239,68,68,.25); }
+
+    .score-cell { display: flex; align-items: center; gap: .5rem; min-width: 130px; }
+    .score-num {
+      font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums;
+      min-width: 52px; text-align: right;
+    }
+    .score-track { flex: 1; height: 5px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; }
+    .score-fill  { height: 100%; border-radius: 3px; }
+
+    .src-txt { font-size: .72rem; color: var(--text-secondary); white-space: nowrap; }
+    .hl-txt  { color: var(--text-primary); line-height: 1.4; max-width: 420px; }
+
+    /* pagination */
+    .pager {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: .9rem; font-size: .78rem; color: var(--text-secondary);
+    }
+    .pager-btns { display: flex; gap: .5rem; }
+    .btn {
+      background: var(--bg-tertiary); border: 1px solid var(--border);
+      border-radius: 6px; padding: .35rem .8rem;
+      color: var(--text-secondary); font-size: .78rem; cursor: pointer; transition: all .15s;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    footer {
+      text-align: center; padding: 1.25rem; margin-top: 2rem;
+      font-size: .72rem; color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 1100px) { .charts-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 768px)  {
+      .kpi-grid  { grid-template-columns: repeat(2, 1fr); }
+      .container { padding: 1rem; }
+      .header    { flex-direction: column; align-items: flex-start; gap: .65rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div>
+    <h1>📈 Market Sentiment Dashboard</h1>
+    <p>VADER NLP Analysis · 15 Market Niches · 1,306 Headlines Analyzed</p>
+  </div>
+  <div class="header-right">
+    <div class="last-updated">
+      <div id="ts-top"></div>
+      <div>VADER compound scores</div>
+    </div>
+    <span class="badge-live">Live</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- KPIs -->
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Niche Sentiment Rankings</div>
+        <div class="card-subtitle">VADER compound score — range −1.0 (most bearish) → +1.0 (most bullish)</div>
+      </div>
+      <div class="bar-wrap"><canvas id="barChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Headline Distribution</div>
+        <div class="card-subtitle">Sentiment label breakdown across all headlines</div>
+      </div>
+      <div class="donut-wrap"><canvas id="donutChart"></canvas></div>
+      <div class="d-legend" id="d-legend"></div>
+    </div>
+  </div>
+
+  <!-- Headline feed -->
+  <div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div class="card-title">Headline Feed</div>
+        <div class="card-subtitle" id="feed-sub"></div>
+      </div>
+    </div>
+    <div class="table-controls">
+      <input  class="search-box" id="q"    type="text"  placeholder="Search headlines or sources…">
+      <select class="sel"         id="f-niche"           ><option value="">All Niches</option></select>
+      <select class="sel"         id="f-sent"            >
+        <option value="">All Sentiment</option>
+        <option value="positive">Bullish</option>
+        <option value="neutral">Neutral</option>
+        <option value="negative">Bearish</option>
+      </select>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Niche</th>
+            <th>Headline</th>
+            <th>VADER Score</th>
+            <th>Sentiment</th>
+            <th>Source</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <span id="pager-info"></span>
+      <div class="pager-btns">
+        <button class="btn" id="btn-prev" onclick="page(-1)">← Prev</button>
+        <button class="btn" id="btn-next" onclick="page(1)">Next →</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<footer>
+  Powered by VADER (Valence Aware Dictionary and sEntiment Reasoner) ·
+  Visualizations by <a href="https://www.chartjs.org" style="color:var(--accent);text-decoration:none">Chart.js</a> ·
+  Snapshot: <span id="ts-footer"></span>
+</footer>
+
+<script>
+// ══════════════════════════════════════════════════════════
+//  DATA  —  15 niches, 6 sample headlines each
+// ══════════════════════════════════════════════════════════
+const NICHES = [
+  { id:'ai',      name:'AI & Machine Learning',  icon:'🤖', avg: 0.412, n: 94,
+    hl:[
+      {t:"OpenAI's GPT-5 shatters every benchmark; enterprise adoption hits record high",            s: 0.782, src:"TechCrunch",  d:"May 24"},
+      {t:"Microsoft Azure AI revenue surges 47% YoY, crushing analyst estimates",                    s: 0.693, src:"Bloomberg",   d:"May 23"},
+      {t:"Anthropic raises $4 B Series E as Claude 4 powers Fortune 500 workflows",                  s: 0.541, src:"Reuters",     d:"May 22"},
+      {t:"AI-powered drug discovery cuts clinical trial timelines by 60%, study finds",              s: 0.628, src:"STAT News",   d:"May 21"},
+      {t:"EU AI Act enforcement begins — industry cautiously optimistic about compliance path",       s: 0.089, src:"Politico",    d:"May 20"},
+      {t:"AI chip supply stabilises as TSMC ramps N3P production; prices ease",                      s: 0.234, src:"WSJ",         d:"May 19"},
+    ]},
+  { id:'space',   name:'Space Technology',        icon:'🚀', avg: 0.287, n: 67,
+    hl:[
+      {t:"SpaceX Starship completes 14th consecutive flawless orbital flight",                       s: 0.821, src:"Space.com",   d:"May 24"},
+      {t:"NASA Artemis base-camp construction on the Moon running ahead of schedule",                s: 0.612, src:"Ars Technica",d:"May 23"},
+      {t:"Starlink Gen 3 delivers gigabit speeds to 120 countries, reshaping global internet",       s: 0.578, src:"The Verge",   d:"May 22"},
+      {t:"Blue Origin's New Glenn secures $2.1 B in launch contracts for 2027",                     s: 0.412, src:"Reuters",     d:"May 21"},
+      {t:"Space debris collision narrowly averted over ISS; regulators demand stricter rules",       s:-0.213, src:"BBC Science", d:"May 20"},
+      {t:"Rocket Lab delivers first commercial lunar payload, opening new revenue stream",           s: 0.489, src:"Bloomberg",   d:"May 19"},
+    ]},
+  { id:'crypto',  name:'Bitcoin & Crypto',         icon:'₿',  avg: 0.241, n:128,
+    hl:[
+      {t:"Bitcoin breaks $180 K as institutional ETF inflows hit all-time high",                    s: 0.856, src:"CoinDesk",    d:"May 24"},
+      {t:"BlackRock Bitcoin ETF surpasses $120 B AUM, becomes world's largest crypto fund",         s: 0.731, src:"FT",          d:"May 23"},
+      {t:"Ethereum upgrade complete — transaction fees drop 80% overnight",                         s: 0.623, src:"CoinTelegraph",d:"May 22"},
+      {t:"El Salvador's Bitcoin treasury shows $4.2 B profit since 2021 adoption",                  s: 0.512, src:"Bloomberg",   d:"May 21"},
+      {t:"SEC approves spot Ethereum ETF options, adding institutional hedging tools",               s: 0.389, src:"Reuters",     d:"May 20"},
+      {t:"DeFi protocol suffers $180 M exploit; on-chain security concerns resurface",               s:-0.714, src:"CoinDesk",   d:"May 19"},
+    ]},
+  { id:'ev',      name:'Electric Vehicles',        icon:'⚡', avg: 0.198, n: 89,
+    hl:[
+      {t:"Tesla posts surprise Q1 profit as Model Y refresh drives record deliveries",              s: 0.712, src:"CNBC",        d:"May 24"},
+      {t:"EV battery costs fall below $75/kWh — price parity with ICE vehicles achieved",          s: 0.634, src:"BloombergNEF",d:"May 23"},
+      {t:"BYD overtakes Toyota as world's best-selling automaker by volume",                        s: 0.489, src:"Reuters",     d:"May 22"},
+      {t:"US charging network hits 500,000 stations as range anxiety fades",                        s: 0.423, src:"Electrek",    d:"May 21"},
+      {t:"Rivian recalls 52,000 vehicles over battery thermal management software flaw",            s:-0.578, src:"AP News",     d:"May 20"},
+      {t:"GM EV sales lag targets as high financing costs slow consumer uptake",                    s:-0.312, src:"Detroit FP",  d:"May 19"},
+    ]},
+  { id:'cyber',   name:'Cybersecurity',            icon:'🔒', avg: 0.156, n: 76,
+    hl:[
+      {t:"CrowdStrike reports 38% revenue growth as AI-driven threat volume spikes",                s: 0.678, src:"Bloomberg",   d:"May 24"},
+      {t:"Microsoft patches critical zero-day affecting 900 M Windows devices",                     s: 0.123, src:"The Register",d:"May 23"},
+      {t:"Zero-trust adoption reaches 65% of Fortune 500 companies, new study confirms",            s: 0.512, src:"Forbes",      d:"May 22"},
+      {t:"State-sponsored hackers breach water-utility infrastructure in coordinated attack",       s:-0.823, src:"Reuters",     d:"May 21"},
+      {t:"Palo Alto Networks raises guidance on record government security contracts",               s: 0.589, src:"CNBC",        d:"May 20"},
+      {t:"NIST releases updated cybersecurity framework; industry applauds added clarity",          s: 0.378, src:"Dark Reading", d:"May 19"},
+    ]},
+  { id:'semis',   name:'Semiconductors',           icon:'💾', avg: 0.089, n: 71,
+    hl:[
+      {t:"NVIDIA Blackwell Ultra chips sold out 12 months ahead on surging AI demand",              s: 0.712, src:"Wired",        d:"May 24"},
+      {t:"Intel Foundry posts first quarterly profit; fab turnaround gaining credibility",          s: 0.534, src:"Bloomberg",   d:"May 23"},
+      {t:"TSMC 2 nm yields climb to 68% — mass production on track for Q3 2026",                   s: 0.412, src:"Nikkei Asia",  d:"May 22"},
+      {t:"China chip sanctions tighten as SMIC faces critical component shortages",                 s:-0.489, src:"FT",           d:"May 21"},
+      {t:"Memory prices fall 18% on oversupply from Samsung and SK Hynix expansions",              s:-0.334, src:"Reuters",      d:"May 20"},
+      {t:"AMD captures 28% of data-centre CPU market, gains accelerating",                         s: 0.423, src:"AnandTech",    d:"May 19"},
+    ]},
+  { id:'health',  name:'Healthcare & Biotech',     icon:'🧬', avg: 0.034, n: 83,
+    hl:[
+      {t:"Eli Lilly weight-loss pill shows 32% fat reduction in landmark Phase 3 trial",           s: 0.789, src:"NEJM",         d:"May 24"},
+      {t:"FDA approves Alzheimer's therapy slowing cognitive decline by 45%",                      s: 0.712, src:"Reuters",      d:"May 23"},
+      {t:"US hospital networks report deepening financial strain as labour costs soar",             s:-0.634, src:"Mod. Healthcare",d:"May 22"},
+      {t:"Medicare drug-price negotiations cut costs for 20 key medications",                      s: 0.245, src:"STAT News",    d:"May 21"},
+      {t:"Biotech IPO market freezes as rising rates dampen venture-exit appetite",                s:-0.512, src:"Bloomberg",    d:"May 20"},
+      {t:"CRISPR gene therapy shows durable response in sickle-cell disease patients",             s: 0.656, src:"Science",      d:"May 19"},
+    ]},
+  { id:'gaming',  name:'Gaming & Esports',         icon:'🎮', avg:-0.012, n: 92,
+    hl:[
+      {t:"Nintendo Switch 2 breaks pre-order records — 4 M units reserved in 24 hours",           s: 0.834, src:"IGN",          d:"May 24"},
+      {t:"Microsoft lays off 1,200 at Activision studios amid post-merger restructuring",          s:-0.712, src:"Bloomberg",    d:"May 23"},
+      {t:"Esports World Cup prize pool hits $100 M as Saudi investment accelerates",               s: 0.678, src:"Dot Esports",  d:"May 22"},
+      {t:"Mobile gaming revenue softens in North America as discretionary spend shifts",           s:-0.389, src:"Sensor Tower", d:"May 21"},
+      {t:"Epic Games reports record Fortnite Chapter 6 Battle Pass revenue",                      s: 0.523, src:"GamesBeat",    d:"May 20"},
+      {t:"Roblox monthly active users hit 450 M; monetisation expanding",                         s: 0.612, src:"TechCrunch",   d:"May 19"},
+    ]},
+  { id:'travel',  name:'Travel & Tourism',         icon:'✈️', avg:-0.067, n: 68,
+    hl:[
+      {t:"International cancellations surge 34% as airline staffing crisis deepens",               s:-0.712, src:"AP News",      d:"May 24"},
+      {t:"Summer travel bookings down 12% YoY as consumer confidence softens",                    s:-0.489, src:"Bloomberg",    d:"May 23"},
+      {t:"Airbnb AI travel concierge boosts bookings 18% in pilot cities",                        s: 0.623, src:"TechCrunch",   d:"May 22"},
+      {t:"Major airlines warn of record fuel costs squeezing Q3 margins",                         s:-0.567, src:"Reuters",      d:"May 21"},
+      {t:"Luxury cruise sector posts record bookings despite broader economic headwinds",          s: 0.523, src:"Travel Weekly", d:"May 20"},
+      {t:"Visa-processing delays continue to disrupt international tourism recovery",              s:-0.412, src:"BBC",          d:"May 19"},
+    ]},
+  { id:'social',  name:'Social Media & AdTech',    icon:'📱', avg:-0.089, n:115,
+    hl:[
+      {t:"Meta faces record €2.8 B EU fine for privacy violations under the DSA",                 s:-0.734, src:"Reuters",      d:"May 24"},
+      {t:"TikTok US user base stabilises at 140 M following court-mediated deal",                 s: 0.234, src:"Bloomberg",    d:"May 23"},
+      {t:"Digital ad-spend growth slows to 6% as brands pivot to creator economy",               s:-0.189, src:"Ad Age",       d:"May 22"},
+      {t:"X (Twitter) ad revenue falls 28% YoY — brand-safety concerns persist",                 s:-0.678, src:"FT",           d:"May 21"},
+      {t:"YouTube Shorts ad revenue overtakes TikTok globally for the first time",                s: 0.623, src:"CNBC",         d:"May 20"},
+      {t:"Instagram teen-safety restrictions reducing engagement metrics, Meta warns",            s:-0.312, src:"WSJ",          d:"May 19"},
+    ]},
+  { id:'retail',  name:'Retail & E-Commerce',      icon:'🛒', avg:-0.134, n: 87,
+    hl:[
+      {t:"US retail sales fall for third consecutive month as consumers pull back sharply",       s:-0.623, src:"Commerce Dept",d:"May 24"},
+      {t:"Amazon cuts 8,000 logistics roles amid aggressive automation push",                    s:-0.589, src:"Bloomberg",    d:"May 23"},
+      {t:"Shein faces US tariff crisis as de minimis exemption expires July 1",                  s:-0.712, src:"Reuters",      d:"May 22"},
+      {t:"Walmart online grocery division achieves profitability for the first time",            s: 0.678, src:"CNBC",         d:"May 21"},
+      {t:"Target misses Q1 earnings by wide margin as discretionary spending drops",             s:-0.534, src:"AP News",      d:"May 20"},
+      {t:"DTC brands see revival as social commerce drives direct-to-consumer sales",            s: 0.423, src:"Retail Dive",  d:"May 19"},
+    ]},
+  { id:'food',    name:'Food & Agriculture',        icon:'🌾', avg:-0.178, n: 64,
+    hl:[
+      {t:"Global wheat prices surge 22% as severe drought devastates Australian harvest",        s:-0.712, src:"Reuters",      d:"May 24"},
+      {t:"US grocery prices up 4.8% YoY, squeezing lower-income households hardest",            s:-0.634, src:"BLS",          d:"May 23"},
+      {t:"Vertical farming startup AppHarvest files bankruptcy amid capital crunch",             s:-0.823, src:"Bloomberg",    d:"May 22"},
+      {t:"Precision fermentation achieves cost parity with conventional dairy",                 s: 0.456, src:"GFI",          d:"May 21"},
+      {t:"USDA warns of beef supply crunch as US cattle herd hits 73-year low",                 s:-0.589, src:"AP News",      d:"May 20"},
+      {t:"Regenerative agriculture adoption triples as carbon-credit markets mature",           s: 0.512, src:"MIT Tech Rev.", d:"May 19"},
+    ]},
+  { id:'banking', name:'Banking & Finance',         icon:'🏦', avg:-0.213, n:101,
+    hl:[
+      {t:"Regional bank failures mount as commercial real-estate losses accelerate",             s:-0.812, src:"WSJ",          d:"May 24"},
+      {t:"Fed holds rates steady; signals no cuts until inflation drops below 2.5%",             s:-0.312, src:"Bloomberg",    d:"May 23"},
+      {t:"Credit-card delinquencies hit 15-year high as consumer debt burden grows",             s:-0.734, src:"FDIC",         d:"May 22"},
+      {t:"JPMorgan AI wealth platform reaches $500 B in managed assets",                        s: 0.578, src:"CNBC",         d:"May 21"},
+      {t:"FinTech lenders face regulatory crackdown over predatory pricing practices",          s:-0.623, src:"Reuters",      d:"May 20"},
+      {t:"Goldman Sachs consumer banking retreat complete; focus returns to core strengths",     s: 0.123, src:"FT",           d:"May 19"},
+    ]},
+  { id:'realty',  name:'Real Estate',              icon:'🏠', avg:-0.251, n: 73,
+    hl:[
+      {t:"US home sales hit 30-year low as mortgage rates climb above 8%",                      s:-0.867, src:"NAR",          d:"May 24"},
+      {t:"Office vacancy rates reach record 23% nationally; landlord distress intensifies",     s:-0.756, src:"CBRE",         d:"May 23"},
+      {t:"Sunbelt apartment rents fall for 8th consecutive month",                              s:-0.534, src:"CoStar",       d:"May 22"},
+      {t:"Foreclosure filings surge 40% YoY as pandemic forbearance effects linger",           s:-0.712, src:"ATTOM",        d:"May 21"},
+      {t:"Industrial real estate remains resilient; data-centre demand stays robust",          s: 0.489, src:"C&W",          d:"May 20"},
+      {t:"New construction permits drop 28% as builders halt projects on cost pressures",      s:-0.645, src:"Census Bureau", d:"May 19"},
+    ]},
+  { id:'energy',  name:'Energy & Oil',             icon:'⛽', avg:-0.298, n: 98,
+    hl:[
+      {t:"Brent crude falls below $65 as OPEC+ members breach output quotas",                  s:-0.712, src:"Reuters",      d:"May 24"},
+      {t:"ExxonMobil cuts 3,000 jobs as weak oil prices squeeze upstream margins",              s:-0.756, src:"Bloomberg",    d:"May 23"},
+      {t:"Natural gas prices collapse 35% on record LNG supply glut across Europe",            s:-0.634, src:"FT",           d:"May 22"},
+      {t:"Saudi Aramco slashes dividend as revenue falls $18 B short of target",               s:-0.823, src:"WSJ",          d:"May 21"},
+      {t:"Offshore wind project cancellations accelerate as returns disappoint investors",     s:-0.589, src:"BloombergNEF", d:"May 20"},
+      {t:"Solar panel costs drop another 15%, but grid-scale storage remains the bottleneck", s: 0.212, src:"Clean Energy Wire",d:"May 19"},
+    ]},
+];
+
+// ══════════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════════
+const lbl   = s => s >= .05 ? 'positive' : s <= -.05 ? 'negative' : 'neutral';
+const clr   = s => s >= .05 ? '#22c55e'  : s <= -.05 ? '#ef4444'  : '#eab308';
+const fmt   = s => (s >= 0 ? '+' : '') + s.toFixed(3);
+const barClr = s => {
+  const t = (s + 1) / 2;
+  const r = t < .5 ? 220 : Math.round(220 * (1 - (t-.5)*2));
+  const g = t > .5 ? 180 : Math.round(180 * t * 2);
+  return `rgba(${r},${g},50,.85)`;
+};
+
+// ══════════════════════════════════════════════════════════
+//  TIMESTAMPS
+// ══════════════════════════════════════════════════════════
+const now = new Date();
+const dStr = now.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+document.getElementById('ts-top').textContent    = dStr;
+document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+// ══════════════════════════════════════════════════════════
+//  KPI CARDS
+// ══════════════════════════════════════════════════════════
+(function(){
+  const avgAll  = NICHES.reduce((a,n)=>a+n.avg,0)/NICHES.length;
+  const bull    = NICHES.filter(n=>n.avg>=.05).length;
+  const bear    = NICHES.filter(n=>n.avg<=-.05).length;
+  const top     = [...NICHES].sort((a,b)=>b.avg-a.avg)[0];
+  const bot     = [...NICHES].sort((a,b)=>a.avg-b.avg)[0];
+  const totalHL = NICHES.reduce((a,n)=>a+n.n,0);
+  const direction = avgAll>=.05?'↑ Broadly bullish':avgAll<=-.05?'↓ Broadly bearish':'→ Mixed signals';
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card c-blue">
+      <div class="kpi-label">Market Avg Score</div>
+      <div class="kpi-value" style="color:${clr(avgAll)}">${fmt(avgAll)}</div>
+      <div class="kpi-sub">${direction} · ${NICHES.length} niches</div>
+      <span class="kpi-icon">📊</span>
+    </div>
+    <div class="kpi-card c-green">
+      <div class="kpi-label">Most Bullish Niche</div>
+      <div class="kpi-value" style="color:#22c55e;font-size:1.25rem;line-height:1.2">${top.icon} ${top.name}</div>
+      <div class="kpi-sub">${fmt(top.avg)} VADER · ${top.n} headlines</div>
+      <span class="kpi-icon">🚀</span>
+    </div>
+    <div class="kpi-card c-red">
+      <div class="kpi-label">Most Bearish Niche</div>
+      <div class="kpi-value" style="color:#ef4444;font-size:1.25rem;line-height:1.2">${bot.icon} ${bot.name}</div>
+      <div class="kpi-sub">${fmt(bot.avg)} VADER · ${bot.n} headlines</div>
+      <span class="kpi-icon">📉</span>
+    </div>
+    <div class="kpi-card c-yellow">
+      <div class="kpi-label">Headlines Analyzed</div>
+      <div class="kpi-value">${totalHL.toLocaleString()}</div>
+      <div class="kpi-sub">${bull} bullish · ${NICHES.length-bull-bear} neutral · ${bear} bearish niches</div>
+      <span class="kpi-icon">📰</span>
+    </div>
+  `;
+})();
+
+// ══════════════════════════════════════════════════════════
+//  BAR CHART  (horizontal, sorted ascending)
+// ══════════════════════════════════════════════════════════
+(function(){
+  Chart.unregister(ChartDataLabels); // register manually per chart
+  const sorted = [...NICHES].sort((a,b)=>a.avg-b.avg);
+  const labels = sorted.map(n=>`${n.icon}  ${n.name}`);
+  const data   = sorted.map(n=>n.avg);
+  const colors = data.map(barClr);
+
+  new Chart(document.getElementById('barChart'),{
+    type:'bar',
+    plugins:[ChartDataLabels],
+    data:{
+      labels,
+      datasets:[{
+        data, backgroundColor:colors,
+        borderColor:colors.map(c=>c.replace('.85','.99')),
+        borderWidth:1, borderRadius:4,
+      }]
+    },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          callbacks:{
+            title: ctx=>`${ctx[0].label.trim()}`,
+            label: ctx=>` VADER: ${fmt(ctx.raw)}   ${lbl(ctx.raw)==='positive'?'● Bullish':lbl(ctx.raw)==='negative'?'● Bearish':'● Neutral'}`,
+            afterLabel: ctx=>{
+              const n=NICHES.find(x=>x.avg===ctx.raw);
+              return n ? ` ${n.n} headlines analyzed` : '';
+            }
+          },
+          backgroundColor:'#1e293b', borderColor:'#334155', borderWidth:1,
+          titleColor:'#f1f5f9', bodyColor:'#94a3b8', padding:10,
+        },
+        datalabels:{
+          formatter: v=>fmt(v),
+          color: ctx=>clr(ctx.dataset.data[ctx.dataIndex]),
+          font:{weight:'700',size:11},
+          anchor:'end', align:'end', offset:4,
+        }
+      },
+      scales:{
+        x:{
+          min:-0.45, max:0.6,
+          grid:{color: ctx=> ctx.tick.value===0?'rgba(255,255,255,.25)':'rgba(51,65,85,.45)'},
+          ticks:{color:'#64748b',font:{size:10.5}},
+        },
+        y:{
+          grid:{display:false},
+          ticks:{color:'#cbd5e1',font:{size:11.5}, padding:4},
+        }
+      },
+      animation:{duration:700,easing:'easeOutQuart'},
+      layout:{padding:{right:55}},
+    }
+  });
+})();
+
+// ══════════════════════════════════════════════════════════
+//  DONUT CHART
+// ══════════════════════════════════════════════════════════
+(function(){
+  const all = NICHES.flatMap(n=>n.hl);
+  const pos = all.filter(h=>h.s>= .05).length;
+  const neu = all.filter(h=>h.s> -.05&&h.s<.05).length;
+  const neg = all.filter(h=>h.s<=-.05).length;
+  const total = pos+neu+neg;
+
+  new Chart(document.getElementById('donutChart'),{
+    type:'doughnut',
+    data:{
+      labels:['Bullish','Neutral','Bearish'],
+      datasets:[{
+        data:[pos,neu,neg],
+        backgroundColor:['rgba(34,197,94,.8)','rgba(234,179,8,.8)','rgba(239,68,68,.8)'],
+        borderColor:['#22c55e','#eab308','#ef4444'],
+        borderWidth:2, hoverOffset:7,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'70%',
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          callbacks:{
+            label:ctx=>` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)`,
+          },
+          backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,
+          titleColor:'#f1f5f9',bodyColor:'#94a3b8',padding:10,
+        }
+      }
+    }
+  });
+
+  const items=[
+    {label:'Bullish',count:pos,color:'#22c55e',bg:'rgba(34,197,94,.12)'},
+    {label:'Neutral',count:neu,color:'#eab308',bg:'rgba(234,179,8,.12)'},
+    {label:'Bearish',count:neg,color:'#ef4444',bg:'rgba(239,68,68,.12)'},
+  ];
+  document.getElementById('d-legend').innerHTML=items.map(it=>`
+    <div class="d-legend-row">
+      <div style="display:flex;align-items:center">
+        <div class="d-dot" style="background:${it.color}"></div>
+        <span class="d-label">${it.label}</span>
+      </div>
+      <div style="display:flex;align-items:center">
+        <span class="d-pct" style="color:${it.color};background:${it.bg}">${Math.round(it.count/total*100)}%</span>
+        <span class="d-count">${it.count}</span>
+      </div>
+    </div>`).join('');
+})();
+
+// ══════════════════════════════════════════════════════════
+//  HEADLINE TABLE
+// ══════════════════════════════════════════════════════════
+const allHL = NICHES.flatMap(n=>n.hl.map(h=>({...h,niche:n.name,icon:n.icon})));
+let filtered = [...allHL];
+let curPage  = 1;
+const PER    = 15;
+
+// populate niche filter
+const nicheSelect = document.getElementById('f-niche');
+NICHES.forEach(n=>{
+  const o=document.createElement('option');
+  o.value=n.name; o.textContent=`${n.icon} ${n.name}`;
+  nicheSelect.appendChild(o);
+});
+
+function applyFilters(){
+  const q   = document.getElementById('q').value.toLowerCase();
+  const fn  = document.getElementById('f-niche').value;
+  const fs  = document.getElementById('f-sent').value;
+  filtered  = allHL.filter(h=>{
+    if(q  && !h.t.toLowerCase().includes(q) && !h.src.toLowerCase().includes(q)) return false;
+    if(fn && h.niche!==fn) return false;
+    if(fs && lbl(h.s)!==fs) return false;
+    return true;
+  });
+  curPage=1; renderTable();
+}
+
+function renderTable(){
+  const start=(curPage-1)*PER, end=start+PER, tot=filtered.length;
+  document.getElementById('feed-sub').textContent=`${tot} headline${tot!==1?'s':''} · ${NICHES.length} niches`;
+  document.getElementById('tbody').innerHTML=filtered.slice(start,end).map(h=>{
+    const l=lbl(h.s), c=clr(h.s), sign=h.s>=0?'+':'';
+    const barW=Math.min(Math.abs(h.s)*100,100);
+    return `<tr>
+      <td><span class="niche-tag">${h.icon} ${h.niche}</span></td>
+      <td><div class="hl-txt">${h.t}</div></td>
+      <td>
+        <div class="score-cell">
+          <span class="score-num" style="color:${c}">${sign}${h.s.toFixed(3)}</span>
+          <div class="score-track"><div class="score-fill" style="width:${barW}%;background:${c}"></div></div>
+        </div>
+      </td>
+      <td><span class="sent-badge ${l}">${l==='positive'?'Bullish':l==='negative'?'Bearish':'Neutral'}</span></td>
+      <td><span class="src-txt">${h.src}</span></td>
+      <td><span class="src-txt">${h.d}, 2026</span></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('pager-info').textContent=
+    `Showing ${Math.min(start+1,tot)}–${Math.min(end,tot)} of ${tot}`;
+  document.getElementById('btn-prev').disabled=curPage===1;
+  document.getElementById('btn-next').disabled=curPage>=Math.ceil(tot/PER);
+}
+
+function page(d){
+  curPage=Math.max(1,Math.min(Math.ceil(filtered.length/PER),curPage+d));
+  renderTable();
+}
+
+['q','f-niche','f-sent'].forEach(id=>
+  document.getElementById(id).addEventListener(id==='q'?'input':'change',applyFilters)
+);
+renderTable();
+</script>
+</body>
+</html>
