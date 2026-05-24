@@ -1,8 +1,4 @@
 NEWS_API_KEY = "08b3d831bf3c4da7a58936bb55cc0b52"
-<<<<<<< HEAD
-NICHES = {
-    "bitcoin": ["bitcoin", "crypto", "BTC", "cryptocurrency"]
-=======
 
 NICHES = {
     "Bitcoin/Crypto":        ["bitcoin", "crypto", "ethereum", "cryptocurrency"],
@@ -20,5 +16,4 @@ NICHES = {
     "Fitness":               ["fitness", "gym", "workout", "weight loss"],
     "Real Estate":           ["real estate", "housing market", "home prices", "mortgage"],
     "Rent/Apartments":       ["rent prices", "apartments", "rental market", "eviction"],
->>>>>>> bcd44f68214ba7008ee54a36d382f32056104597
 }
