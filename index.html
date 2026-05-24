@@ -8,12 +8,12 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <style>
     :root {
-      --bg-primary:   #0f172a;
-      --bg-secondary: #1e293b;
-      --bg-tertiary:  #273548;
-      --border:       #334155;
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
+      --bg-primary:   #000000;
+      --bg-secondary: #0d0d0d;
+      --bg-tertiary:  #1a1a1a;
+      --border:       #2a2a2a;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0a0;
       --accent:       #38bdf8;
       --positive:     #22c55e;
       --pos-bg:       rgba(34,197,94,.12);
@@ -21,7 +21,7 @@
       --neu-bg:       rgba(234,179,8,.12);
       --negative:     #ef4444;
       --neg-bg:       rgba(239,68,68,.12);
-      --shadow: 0 4px 6px -1px rgba(0,0,0,.35), 0 2px 4px -2px rgba(0,0,0,.2);
+      --shadow: 0 4px 6px -1px rgba(0,0,0,.6), 0 2px 4px -2px rgba(0,0,0,.4);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -34,7 +34,7 @@
 
     /* ── HEADER ── */
     .header {
-      background: linear-gradient(135deg, #0c1525 0%, #1a3a5c 50%, #0c1525 100%);
+      background: linear-gradient(135deg, #000000 0%, #111111 50%, #000000 100%);
       border-bottom: 1px solid var(--border);
       padding: 1.25rem 2rem;
       display: flex;
@@ -559,8 +559,8 @@ document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US
               return n ? ` ${n.n} headlines analyzed` : '';
             }
           },
-          backgroundColor:'#1e293b', borderColor:'#334155', borderWidth:1,
-          titleColor:'#f1f5f9', bodyColor:'#94a3b8', padding:10,
+          backgroundColor:'#0d0d0d', borderColor:'#2a2a2a', borderWidth:1,
+          titleColor:'#ffffff', bodyColor:'#a0a0a0', padding:10,
         },
         datalabels:{
           formatter: v=>fmt(v),
@@ -572,12 +572,12 @@ document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US
       scales:{
         x:{
           min:-0.45, max:0.6,
-          grid:{color: ctx=> ctx.tick.value===0?'rgba(255,255,255,.25)':'rgba(51,65,85,.45)'},
-          ticks:{color:'#64748b',font:{size:10.5}},
+          grid:{color: ctx=> ctx.tick.value===0?'rgba(255,255,255,.3)':'rgba(60,60,60,.5)'},
+          ticks:{color:'#707070',font:{size:10.5}},
         },
         y:{
           grid:{display:false},
-          ticks:{color:'#cbd5e1',font:{size:11.5}, padding:4},
+          ticks:{color:'#e0e0e0',font:{size:11.5}, padding:4},
         }
       },
       animation:{duration:700,easing:'easeOutQuart'},
@@ -615,8 +615,8 @@ document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US
           callbacks:{
             label:ctx=>` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)`,
           },
-          backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,
-          titleColor:'#f1f5f9',bodyColor:'#94a3b8',padding:10,
+          backgroundColor:'#0d0d0d',borderColor:'#2a2a2a',borderWidth:1,
+          titleColor:'#ffffff',bodyColor:'#a0a0a0',padding:10,
         }
       }
     }
