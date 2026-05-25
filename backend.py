@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── config ─────────────────────────────────────────────────────────────────────
@@ -62,6 +62,30 @@ def db_query(query: str, params: tuple = ()) -> list[dict]:
         rows = [dict(r) for r in conn.execute(query, params).fetchall()]
         conn.close()
         return rows
+
+
+def db_execute(query: str, params: tuple = ()) -> int:
+    """
+    Run a write query (INSERT / UPDATE / DELETE) and return the number of
+    affected rows.  Uses PostgreSQL when available, falls back to SQLite.
+    Write queries with ? placeholders; they are rewritten to %s for PostgreSQL.
+    """
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur  = conn.cursor()
+        cur.execute(query.replace("?", "%s"), params)
+        affected = cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+        return affected
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        cur  = conn.execute(query, params)
+        conn.commit()
+        affected = cur.rowcount
+        conn.close()
+        return affected
 
 
 # ── routes ─────────────────────────────────────────────────────────────────────
@@ -162,6 +186,28 @@ def get_headlines(
         """,
         tuple(params),
     )
+
+
+_CLEANUP_KEY = "cleanup123"
+
+
+@app.get("/api/cleanup")
+def cleanup_malformed_dates(
+    key: Optional[str] = Query(None, description="Secret key required to run cleanup"),
+):
+    """
+    Delete all headlines whose published value does NOT start with '20'
+    (i.e. old RFC-2822 / non-ISO dates that slipped through before normalisation).
+    Requires ?key=cleanup123.
+    Returns { "deleted": <count> }.
+    """
+    if key != _CLEANUP_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing key.")
+
+    deleted = db_execute(
+        "DELETE FROM headlines WHERE published NOT LIKE '20%'"
+    )
+    return {"deleted": deleted}
 
 
 # ── entrypoint ─────────────────────────────────────────────────────────────────
