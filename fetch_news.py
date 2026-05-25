@@ -5,11 +5,13 @@ Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite
 Run:  python3 fetch_news.py
 """
 
+import email.utils
 import os
 import sqlite3
 import time
 from datetime import datetime, timezone
 
+import dateutil.parser
 import feedparser
 import requests
 from newsapi import NewsApiClient
@@ -79,6 +81,26 @@ def init_db(conn):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_niche   ON headlines(niche)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_fetched ON headlines(fetched)")
     conn.commit()
+
+
+# ── date normalisation ─────────────────────────────────────────────────────────
+
+def normalize_date(raw: str) -> str | None:
+    """Parse an RSS/NewsAPI date string and return an ISO-8601 string, or None."""
+    if not raw:
+        return None
+    # Primary: RFC 2822 format used by most RSS feeds
+    # e.g. "Wed, 20 May 2026 21:56:06 +0000"
+    try:
+        return email.utils.parsedate_to_datetime(raw).isoformat()
+    except Exception:
+        pass
+    # Fallback: dateutil handles ISO 8601, NewsAPI timestamps, and other variants
+    try:
+        return dateutil.parser.parse(raw).isoformat()
+    except Exception:
+        pass
+    return None
 
 
 # ── scoring ────────────────────────────────────────────────────────────────────
@@ -191,7 +213,7 @@ def main():
                 a["title"],
                 a["source"],
                 a["url"],
-                a["published"],
+                normalize_date(a["published"]),
                 sc["compound"], sc["pos"], sc["neu"], sc["neg"],
                 fetched_at,
             ))
