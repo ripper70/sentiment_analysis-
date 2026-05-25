@@ -16,5 +16,5 @@ NICHES = {
     "Electric Vehicles":     ["electric vehicle", "EV", "Tesla", "battery"],
     "Bitcoin & Crypto":      ["bitcoin", "crypto", "ethereum", "cryptocurrency"],
     "Space Technology":      ["SpaceX", "NASA", "space", "rocket"],
-    "AI & Machine Learning": ["artificial intelligence", "ChatGPT", "machine learning", "OpenAI"],
+    "AI & Machine Learning": ["artificial intelligence", "ChatGPT", "machine learning", "OpenAI", "claude", "anthropic"],
 }
