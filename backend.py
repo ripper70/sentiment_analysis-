@@ -144,22 +144,12 @@ def get_headlines(
         params.append(niche)
 
     if date_from:
-        conditions.append("published >= ?")
+        conditions.append("SUBSTR(published, 1, 10) >= ?")
         params.append(date_from)
 
     if date_to:
-        try:
-            next_day = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
-        except ValueError:
-            next_day = date_to
-        conditions.append("published < ?")
-        params.append(next_day)
-
-    # Exclude rows with malformed / non-ISO dates when a date range is active.
-    # Old entries may have raw RFC-2822 strings or NULL-like values that sort
-    # unpredictably and bleed through the >= / < comparisons.
-    if date_from or date_to:
-        conditions.append("published LIKE '20%'")
+        conditions.append("SUBSTR(published, 1, 10) <= ?")
+        params.append(date_to)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return db_query(
