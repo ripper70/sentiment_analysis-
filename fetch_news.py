@@ -186,6 +186,12 @@ def main():
     rss_pool = fetch_all_rss()
     print(f"  RSS pool: {len(rss_pool)} total articles from {len(RSS_FEEDS)} feeds\n")
 
+    # ── global dedup: same article must not appear in more than one niche ─────
+    # Keyed by (normalised_title, source) so the same story from two outlets is
+    # allowed, but a single article matched by two different niche keywords is
+    # saved only once (under whichever niche processes it first).
+    seen_global: set[tuple[str, str]] = set()
+
     for niche, keywords in NICHES.items():
         # ── pull from both sources ────────────────────────────────────────────
         news_articles = fetch_newsapi(niche, keywords)
@@ -196,13 +202,16 @@ def main():
         # ── quality filters ───────────────────────────────────────────────────
         combined = [a for a in combined if len(a["title"]) >= 25]
 
-        # ── deduplicate by normalised title ───────────────────────────────────
+        # ── deduplicate by normalised title (intra-niche) and by
+        #    (title, source) across all niches (inter-niche) ─────────────────
         seen:   set[str]   = set()
         unique: list[dict] = []
         for a in combined:
-            key = a["title"].lower()
-            if key not in seen:
+            key        = a["title"].lower()
+            global_key = (key, a["source"])
+            if key not in seen and global_key not in seen_global:
                 seen.add(key)
+                seen_global.add(global_key)
                 unique.append(a)
 
         # ── score & collect rows ──────────────────────────────────────────────

@@ -155,6 +155,12 @@ def get_headlines(
         conditions.append("published < ?")
         params.append(next_day)
 
+    # Exclude rows with malformed / non-ISO dates when a date range is active.
+    # Old entries may have raw RFC-2822 strings or NULL-like values that sort
+    # unpredictably and bleed through the >= / < comparisons.
+    if date_from or date_to:
+        conditions.append("published LIKE '20%'")
+
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return db_query(
         f"""
