@@ -1,6 +1,7 @@
 """
 fetch_news.py
-Pull headlines from NewsAPI + Reuters/AP RSS feeds, score with VADER, store in DB.
+Pull headlines from NewsAPI + Reuters/AP RSS feeds, score with HuggingFace FinBERT
+(ProsusAI/finbert), store in DB.  Falls back to VADER if the API is unavailable.
 Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite.
 Run:  python3 fetch_news.py
 """
@@ -17,7 +18,7 @@ import requests
 from newsapi import NewsApiClient
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import NEWS_API_KEY, NICHES
+from config import HUGGINGFACE_API_KEY, NEWS_API_KEY, NICHES
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -28,7 +29,11 @@ if USE_POSTGRES:
     import psycopg2
 
 api      = NewsApiClient(api_key=NEWS_API_KEY)
-analyzer = SentimentIntensityAnalyzer()
+analyzer = SentimentIntensityAnalyzer()   # VADER — used as fallback only
+
+# ── FinBERT config ─────────────────────────────────────────────────────────────
+FINBERT_API_URL = "https://api-inference.huggingface.co/models/ProsusAI/finbert"
+FINBERT_HEADERS = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
 
 RSS_FEEDS = [
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
@@ -113,8 +118,41 @@ def normalize_date(raw: str) -> str | None:
 
 # ── scoring ────────────────────────────────────────────────────────────────────
 
-def score(text: str) -> dict:
-    return analyzer.polarity_scores(text)
+def score_finbert(text: str) -> dict:
+    """Score a headline with HuggingFace FinBERT; falls back to VADER on error.
+
+    Returns a dict with keys: compound, pos, neg, neu — same shape as VADER so
+    the rest of the pipeline needs no changes.
+
+    Label mapping:
+      positive → compound= score, pos=score, neg=0,     neu=0
+      negative → compound=-score, pos=0,     neg=score, neu=0
+      neutral  → compound= 0,     pos=0,     neg=0,     neu=score
+    """
+    try:
+        resp = requests.post(
+            FINBERT_API_URL,
+            headers=FINBERT_HEADERS,
+            json={"inputs": text},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        # HuggingFace returns [[{label, score}, ...]] (list-of-lists)
+        if results and isinstance(results[0], list):
+            results = results[0]
+        best  = max(results, key=lambda x: x["score"])
+        label = best["label"].lower()
+        s     = best["score"]
+        if label == "positive":
+            return {"compound":  s,  "pos": s,   "neg": 0.0, "neu": 0.0}
+        elif label == "negative":
+            return {"compound": -s,  "pos": 0.0, "neg": s,   "neu": 0.0}
+        else:  # neutral
+            return {"compound":  0.0, "pos": 0.0, "neg": 0.0, "neu": s}
+    except Exception as e:
+        print(f"    [!] FinBERT error — falling back to VADER: {e}")
+        return analyzer.polarity_scores(text)
 
 
 # ── fetchers ───────────────────────────────────────────────────────────────────
@@ -184,7 +222,8 @@ def main():
     init_db(conn)
     fetched_at = datetime.now(timezone.utc).isoformat()
 
-    rows: list[tuple]           = []
+    # all_articles collects unique articles across niches before scoring
+    all_articles: list[dict]     = []
     niche_counts: dict[str, int] = {}
 
     print(f"Fetching from NewsAPI + RSS feeds for {len(NICHES)} niches…\n")
@@ -224,24 +263,13 @@ def main():
             if key not in seen and global_key not in seen_global:
                 seen.add(key)
                 seen_global.add(global_key)
-                unique.append(a)
-
-        # ── score & collect rows ──────────────────────────────────────────────
-        for a in unique:
-            sc = score(a["title"])
-            rows.append((
-                niche,
-                a["title"],
-                a["source"],
-                a["url"],
-                normalize_date(a["published"]),
-                sc["compound"], sc["pos"], sc["neu"], sc["neg"],
-                fetched_at,
-            ))
+                unique.append({**a, "niche": niche})
 
         niche_counts[niche] = len(unique)
-        news_n  = len(news_articles)
-        rss_n   = len(rss_articles)
+        all_articles.extend(unique)
+
+        news_n    = len(news_articles)
+        rss_n     = len(rss_articles)
         raw_total = news_n + rss_n
         filtered  = raw_total - len(combined)
         deduped   = len(combined) - len(unique)
@@ -255,6 +283,29 @@ def main():
             f"  ✓  {niche:<25s} — {len(unique):3d} headlines "
             f"(NewsAPI: {news_n}, RSS: {rss_n}{note})"
         )
+
+    # ── score all headlines with FinBERT in batches of 10 ────────────────────
+    BATCH_SIZE = 10
+    total = len(all_articles)
+    rows:  list[tuple] = []
+
+    print(f"\nScoring {total} headlines with FinBERT (ProsusAI/finbert)…")
+    for i in range(0, total, BATCH_SIZE):
+        batch     = all_articles[i : i + BATCH_SIZE]
+        batch_end = min(i + BATCH_SIZE, total)
+        print(f"  Scoring headlines {i + 1}–{batch_end} of {total}…")
+        for a in batch:
+            sc = score_finbert(a["title"])
+            rows.append((
+                a["niche"],
+                a["title"],
+                a["source"],
+                a["url"],
+                normalize_date(a["published"]),
+                sc["compound"], sc["pos"], sc["neu"], sc["neg"],
+                fetched_at,
+            ))
+            time.sleep(0.1)   # avoid HuggingFace rate limits
 
     # ── bulk insert ───────────────────────────────────────────────────────────
     placeholder = "%s" if USE_POSTGRES else "?"
