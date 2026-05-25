@@ -1,3 +1,6 @@
 vaderSentiment
 requests
 schedule
+newsapi-python
+fastapi
+uvicorn[standard]

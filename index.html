@@ -467,363 +467,270 @@
 
 <script>
 // ══════════════════════════════════════════════════════════
-//  DATA  —  15 niches, 6 sample headlines each
+//  CONFIG  —  change API_URL to point to your backend
 // ══════════════════════════════════════════════════════════
-const NICHES = [
-  { id:'ai',      name:'AI & Machine Learning',  icon:'🤖', avg: 0.412, n: 94,
-    hl:[
-      {t:"OpenAI's GPT-5 shatters every benchmark; enterprise adoption hits record high",            s: 0.782, src:"TechCrunch",  d:"May 24"},
-      {t:"Microsoft Azure AI revenue surges 47% YoY, crushing analyst estimates",                    s: 0.693, src:"Bloomberg",   d:"May 23"},
-      {t:"Anthropic raises $4 B Series E as Claude 4 powers Fortune 500 workflows",                  s: 0.541, src:"Reuters",     d:"May 22"},
-      {t:"AI-powered drug discovery cuts clinical trial timelines by 60%, study finds",              s: 0.628, src:"STAT News",   d:"May 21"},
-      {t:"EU AI Act enforcement begins — industry cautiously optimistic about compliance path",       s: 0.089, src:"Politico",    d:"May 20"},
-      {t:"AI chip supply stabilises as TSMC ramps N3P production; prices ease",                      s: 0.234, src:"WSJ",         d:"May 19"},
-    ]},
-  { id:'space',   name:'Space Technology',        icon:'🚀', avg: 0.287, n: 67,
-    hl:[
-      {t:"SpaceX Starship completes 14th consecutive flawless orbital flight",                       s: 0.821, src:"Space.com",   d:"May 24"},
-      {t:"NASA Artemis base-camp construction on the Moon running ahead of schedule",                s: 0.612, src:"Ars Technica",d:"May 23"},
-      {t:"Starlink Gen 3 delivers gigabit speeds to 120 countries, reshaping global internet",       s: 0.578, src:"The Verge",   d:"May 22"},
-      {t:"Blue Origin's New Glenn secures $2.1 B in launch contracts for 2027",                     s: 0.412, src:"Reuters",     d:"May 21"},
-      {t:"Space debris collision narrowly averted over ISS; regulators demand stricter rules",       s:-0.213, src:"BBC Science", d:"May 20"},
-      {t:"Rocket Lab delivers first commercial lunar payload, opening new revenue stream",           s: 0.489, src:"Bloomberg",   d:"May 19"},
-    ]},
-  { id:'crypto',  name:'Bitcoin & Crypto',         icon:'₿',  avg: 0.241, n:128,
-    hl:[
-      {t:"Bitcoin breaks $180 K as institutional ETF inflows hit all-time high",                    s: 0.856, src:"CoinDesk",    d:"May 24"},
-      {t:"BlackRock Bitcoin ETF surpasses $120 B AUM, becomes world's largest crypto fund",         s: 0.731, src:"FT",          d:"May 23"},
-      {t:"Ethereum upgrade complete — transaction fees drop 80% overnight",                         s: 0.623, src:"CoinTelegraph",d:"May 22"},
-      {t:"El Salvador's Bitcoin treasury shows $4.2 B profit since 2021 adoption",                  s: 0.512, src:"Bloomberg",   d:"May 21"},
-      {t:"SEC approves spot Ethereum ETF options, adding institutional hedging tools",               s: 0.389, src:"Reuters",     d:"May 20"},
-      {t:"DeFi protocol suffers $180 M exploit; on-chain security concerns resurface",               s:-0.714, src:"CoinDesk",   d:"May 19"},
-    ]},
-  { id:'ev',      name:'Electric Vehicles',        icon:'⚡', avg: 0.198, n: 89,
-    hl:[
-      {t:"Tesla posts surprise Q1 profit as Model Y refresh drives record deliveries",              s: 0.712, src:"CNBC",        d:"May 24"},
-      {t:"EV battery costs fall below $75/kWh — price parity with ICE vehicles achieved",          s: 0.634, src:"BloombergNEF",d:"May 23"},
-      {t:"BYD overtakes Toyota as world's best-selling automaker by volume",                        s: 0.489, src:"Reuters",     d:"May 22"},
-      {t:"US charging network hits 500,000 stations as range anxiety fades",                        s: 0.423, src:"Electrek",    d:"May 21"},
-      {t:"Rivian recalls 52,000 vehicles over battery thermal management software flaw",            s:-0.578, src:"AP News",     d:"May 20"},
-      {t:"GM EV sales lag targets as high financing costs slow consumer uptake",                    s:-0.312, src:"Detroit FP",  d:"May 19"},
-    ]},
-  { id:'cyber',   name:'Cybersecurity',            icon:'🔒', avg: 0.156, n: 76,
-    hl:[
-      {t:"CrowdStrike reports 38% revenue growth as AI-driven threat volume spikes",                s: 0.678, src:"Bloomberg",   d:"May 24"},
-      {t:"Microsoft patches critical zero-day affecting 900 M Windows devices",                     s: 0.123, src:"The Register",d:"May 23"},
-      {t:"Zero-trust adoption reaches 65% of Fortune 500 companies, new study confirms",            s: 0.512, src:"Forbes",      d:"May 22"},
-      {t:"State-sponsored hackers breach water-utility infrastructure in coordinated attack",       s:-0.823, src:"Reuters",     d:"May 21"},
-      {t:"Palo Alto Networks raises guidance on record government security contracts",               s: 0.589, src:"CNBC",        d:"May 20"},
-      {t:"NIST releases updated cybersecurity framework; industry applauds added clarity",          s: 0.378, src:"Dark Reading", d:"May 19"},
-    ]},
-  { id:'semis',   name:'Semiconductors',           icon:'💾', avg: 0.089, n: 71,
-    hl:[
-      {t:"NVIDIA Blackwell Ultra chips sold out 12 months ahead on surging AI demand",              s: 0.712, src:"Wired",        d:"May 24"},
-      {t:"Intel Foundry posts first quarterly profit; fab turnaround gaining credibility",          s: 0.534, src:"Bloomberg",   d:"May 23"},
-      {t:"TSMC 2 nm yields climb to 68% — mass production on track for Q3 2026",                   s: 0.412, src:"Nikkei Asia",  d:"May 22"},
-      {t:"China chip sanctions tighten as SMIC faces critical component shortages",                 s:-0.489, src:"FT",           d:"May 21"},
-      {t:"Memory prices fall 18% on oversupply from Samsung and SK Hynix expansions",              s:-0.334, src:"Reuters",      d:"May 20"},
-      {t:"AMD captures 28% of data-centre CPU market, gains accelerating",                         s: 0.423, src:"AnandTech",    d:"May 19"},
-    ]},
-  { id:'health',  name:'Healthcare & Biotech',     icon:'🧬', avg: 0.034, n: 83,
-    hl:[
-      {t:"Eli Lilly weight-loss pill shows 32% fat reduction in landmark Phase 3 trial",           s: 0.789, src:"NEJM",         d:"May 24"},
-      {t:"FDA approves Alzheimer's therapy slowing cognitive decline by 45%",                      s: 0.712, src:"Reuters",      d:"May 23"},
-      {t:"US hospital networks report deepening financial strain as labour costs soar",             s:-0.634, src:"Mod. Healthcare",d:"May 22"},
-      {t:"Medicare drug-price negotiations cut costs for 20 key medications",                      s: 0.245, src:"STAT News",    d:"May 21"},
-      {t:"Biotech IPO market freezes as rising rates dampen venture-exit appetite",                s:-0.512, src:"Bloomberg",    d:"May 20"},
-      {t:"CRISPR gene therapy shows durable response in sickle-cell disease patients",             s: 0.656, src:"Science",      d:"May 19"},
-    ]},
-  { id:'gaming',  name:'Gaming & Esports',         icon:'🎮', avg:-0.012, n: 92,
-    hl:[
-      {t:"Nintendo Switch 2 breaks pre-order records — 4 M units reserved in 24 hours",           s: 0.834, src:"IGN",          d:"May 24"},
-      {t:"Microsoft lays off 1,200 at Activision studios amid post-merger restructuring",          s:-0.712, src:"Bloomberg",    d:"May 23"},
-      {t:"Esports World Cup prize pool hits $100 M as Saudi investment accelerates",               s: 0.678, src:"Dot Esports",  d:"May 22"},
-      {t:"Mobile gaming revenue softens in North America as discretionary spend shifts",           s:-0.389, src:"Sensor Tower", d:"May 21"},
-      {t:"Epic Games reports record Fortnite Chapter 6 Battle Pass revenue",                      s: 0.523, src:"GamesBeat",    d:"May 20"},
-      {t:"Roblox monthly active users hit 450 M; monetisation expanding",                         s: 0.612, src:"TechCrunch",   d:"May 19"},
-    ]},
-  { id:'travel',  name:'Travel & Tourism',         icon:'🛫', avg:-0.067, n: 68,
-    hl:[
-      {t:"International cancellations surge 34% as airline staffing crisis deepens",               s:-0.712, src:"AP News",      d:"May 24"},
-      {t:"Summer travel bookings down 12% YoY as consumer confidence softens",                    s:-0.489, src:"Bloomberg",    d:"May 23"},
-      {t:"Airbnb AI travel concierge boosts bookings 18% in pilot cities",                        s: 0.623, src:"TechCrunch",   d:"May 22"},
-      {t:"Major airlines warn of record fuel costs squeezing Q3 margins",                         s:-0.567, src:"Reuters",      d:"May 21"},
-      {t:"Luxury cruise sector posts record bookings despite broader economic headwinds",          s: 0.523, src:"Travel Weekly", d:"May 20"},
-      {t:"Visa-processing delays continue to disrupt international tourism recovery",              s:-0.412, src:"BBC",          d:"May 19"},
-    ]},
-  { id:'social',  name:'Social Media & AdTech',    icon:'📱', avg:-0.089, n:115,
-    hl:[
-      {t:"Meta faces record €2.8 B EU fine for privacy violations under the DSA",                 s:-0.734, src:"Reuters",      d:"May 24"},
-      {t:"TikTok US user base stabilises at 140 M following court-mediated deal",                 s: 0.234, src:"Bloomberg",    d:"May 23"},
-      {t:"Digital ad-spend growth slows to 6% as brands pivot to creator economy",               s:-0.189, src:"Ad Age",       d:"May 22"},
-      {t:"X (Twitter) ad revenue falls 28% YoY — brand-safety concerns persist",                 s:-0.678, src:"FT",           d:"May 21"},
-      {t:"YouTube Shorts ad revenue overtakes TikTok globally for the first time",                s: 0.623, src:"CNBC",         d:"May 20"},
-      {t:"Instagram teen-safety restrictions reducing engagement metrics, Meta warns",            s:-0.312, src:"WSJ",          d:"May 19"},
-    ]},
-  { id:'retail',  name:'Retail & E-Commerce',      icon:'🛒', avg:-0.134, n: 87,
-    hl:[
-      {t:"US retail sales fall for third consecutive month as consumers pull back sharply",       s:-0.623, src:"Commerce Dept",d:"May 24"},
-      {t:"Amazon cuts 8,000 logistics roles amid aggressive automation push",                    s:-0.589, src:"Bloomberg",    d:"May 23"},
-      {t:"Shein faces US tariff crisis as de minimis exemption expires July 1",                  s:-0.712, src:"Reuters",      d:"May 22"},
-      {t:"Walmart online grocery division achieves profitability for the first time",            s: 0.678, src:"CNBC",         d:"May 21"},
-      {t:"Target misses Q1 earnings by wide margin as discretionary spending drops",             s:-0.534, src:"AP News",      d:"May 20"},
-      {t:"DTC brands see revival as social commerce drives direct-to-consumer sales",            s: 0.423, src:"Retail Dive",  d:"May 19"},
-    ]},
-  { id:'food',    name:'Food & Agriculture',        icon:'🌾', avg:-0.178, n: 64,
-    hl:[
-      {t:"Global wheat prices surge 22% as severe drought devastates Australian harvest",        s:-0.712, src:"Reuters",      d:"May 24"},
-      {t:"US grocery prices up 4.8% YoY, squeezing lower-income households hardest",            s:-0.634, src:"BLS",          d:"May 23"},
-      {t:"Vertical farming startup AppHarvest files bankruptcy amid capital crunch",             s:-0.823, src:"Bloomberg",    d:"May 22"},
-      {t:"Precision fermentation achieves cost parity with conventional dairy",                 s: 0.456, src:"GFI",          d:"May 21"},
-      {t:"USDA warns of beef supply crunch as US cattle herd hits 73-year low",                 s:-0.589, src:"AP News",      d:"May 20"},
-      {t:"Regenerative agriculture adoption triples as carbon-credit markets mature",           s: 0.512, src:"MIT Tech Rev.", d:"May 19"},
-    ]},
-  { id:'banking', name:'Banking & Finance',         icon:'🏦', avg:-0.213, n:101,
-    hl:[
-      {t:"Regional bank failures mount as commercial real-estate losses accelerate",             s:-0.812, src:"WSJ",          d:"May 24"},
-      {t:"Fed holds rates steady; signals no cuts until inflation drops below 2.5%",             s:-0.312, src:"Bloomberg",    d:"May 23"},
-      {t:"Credit-card delinquencies hit 15-year high as consumer debt burden grows",             s:-0.734, src:"FDIC",         d:"May 22"},
-      {t:"JPMorgan AI wealth platform reaches $500 B in managed assets",                        s: 0.578, src:"CNBC",         d:"May 21"},
-      {t:"FinTech lenders face regulatory crackdown over predatory pricing practices",          s:-0.623, src:"Reuters",      d:"May 20"},
-      {t:"Goldman Sachs consumer banking retreat complete; focus returns to core strengths",     s: 0.123, src:"FT",           d:"May 19"},
-    ]},
-  { id:'realty',  name:'Real Estate',              icon:'🏠', avg:-0.251, n: 73,
-    hl:[
-      {t:"US home sales hit 30-year low as mortgage rates climb above 8%",                      s:-0.867, src:"NAR",          d:"May 24"},
-      {t:"Office vacancy rates reach record 23% nationally; landlord distress intensifies",     s:-0.756, src:"CBRE",         d:"May 23"},
-      {t:"Sunbelt apartment rents fall for 8th consecutive month",                              s:-0.534, src:"CoStar",       d:"May 22"},
-      {t:"Foreclosure filings surge 40% YoY as pandemic forbearance effects linger",           s:-0.712, src:"ATTOM",        d:"May 21"},
-      {t:"Industrial real estate remains resilient; data-centre demand stays robust",          s: 0.489, src:"C&W",          d:"May 20"},
-      {t:"New construction permits drop 28% as builders halt projects on cost pressures",      s:-0.645, src:"Census Bureau", d:"May 19"},
-    ]},
-  { id:'energy',  name:'Energy & Oil',             icon:'⛽', avg:-0.298, n: 98,
-    hl:[
-      {t:"Brent crude falls below $65 as OPEC+ members breach output quotas",                  s:-0.712, src:"Reuters",      d:"May 24"},
-      {t:"ExxonMobil cuts 3,000 jobs as weak oil prices squeeze upstream margins",              s:-0.756, src:"Bloomberg",    d:"May 23"},
-      {t:"Natural gas prices collapse 35% on record LNG supply glut across Europe",            s:-0.634, src:"FT",           d:"May 22"},
-      {t:"Saudi Aramco slashes dividend as revenue falls $18 B short of target",               s:-0.823, src:"WSJ",          d:"May 21"},
-      {t:"Offshore wind project cancellations accelerate as returns disappoint investors",     s:-0.589, src:"BloombergNEF", d:"May 20"},
-      {t:"Solar panel costs drop another 15%, but grid-scale storage remains the bottleneck", s: 0.212, src:"Clean Energy Wire",d:"May 19"},
-    ]},
-];
+const API_URL = 'http://localhost:8000';
+
+// ══════════════════════════════════════════════════════════
+//  NICHE ICONS  (maps DB niche names → display emoji)
+// ══════════════════════════════════════════════════════════
+const NICHE_ICONS = {
+  'Bitcoin/Crypto':     '₿',
+  'Stock Market':       '📈',
+  'Personal Finance':   '💰',
+  'Electric Vehicles':  '⚡',
+  'Solar/Home Energy':  '☀️',
+  'Meal Kit Delivery':  '🍽️',
+  'Supplements':        '💊',
+  'AI Tools':           '🤖',
+  'Smartphones':        '📱',
+  'Streaming Services': '🎬',
+  'Remote Work':        '🏡',
+  'Travel/Airlines':    '✈️',
+  'Fitness':            '💪',
+  'Real Estate':        '🏠',
+  'Rent/Apartments':    '🏢',
+};
 
 // ══════════════════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════════════════
-const lbl   = s => s >= .05 ? 'positive' : s <= -.05 ? 'negative' : 'neutral';
-const clr   = s => s >= .05 ? '#22c55e'  : s <= -.05 ? '#ef4444'  : '#eab308';
-const fmt   = s => (s >= 0 ? '+' : '') + s.toFixed(3);
+const lbl    = s => s >=  .05 ? 'positive' : s <= -.05 ? 'negative' : 'neutral';
+const clr    = s => s >=  .05 ? '#22c55e'  : s <= -.05 ? '#ef4444'  : '#eab308';
+const fmt    = s => (s >= 0 ? '+' : '') + s.toFixed(3);
 const barClr = s => {
   const t = (s + 1) / 2;
-  const r = t < .5 ? 220 : Math.round(220 * (1 - (t-.5)*2));
+  const r = t < .5 ? 220 : Math.round(220 * (1 - (t - .5) * 2));
   const g = t > .5 ? 180 : Math.round(180 * t * 2);
   return `rgba(${r},${g},50,.85)`;
 };
+const iconOf = niche => NICHE_ICONS[niche] || '📰';
+
+function formatDate(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d)) return isoStr.slice(0, 10);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch { return isoStr.slice(0, 10); }
+}
 
 // ══════════════════════════════════════════════════════════
 //  TIMESTAMPS
 // ══════════════════════════════════════════════════════════
-const now = new Date();
-const dStr = now.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+const now  = new Date();
+const dStr = now.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
 document.getElementById('ts-top').textContent    = dStr;
-document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+
+// ══════════════════════════════════════════════════════════
+//  CHART INSTANCES  (held so we can destroy before redraw)
+// ══════════════════════════════════════════════════════════
+let barChartInst   = null;
+let donutChartInst = null;
 
 // ══════════════════════════════════════════════════════════
 //  KPI CARDS
 // ══════════════════════════════════════════════════════════
-(function(){
-  const avgAll  = NICHES.reduce((a,n)=>a+n.avg,0)/NICHES.length;
-  const bull    = NICHES.filter(n=>n.avg>=.05).length;
-  const bear    = NICHES.filter(n=>n.avg<=-.05).length;
-  const top     = [...NICHES].sort((a,b)=>b.avg-a.avg)[0];
-  const bot     = [...NICHES].sort((a,b)=>a.avg-b.avg)[0];
-  const totalHL = NICHES.reduce((a,n)=>a+n.n,0);
-  const direction = avgAll>=.05?'↑ Broadly bullish':avgAll<=-.05?'↓ Broadly bearish':'→ Mixed signals';
+function renderKPIs(niches) {
+  if (!niches.length) {
+    document.getElementById('kpi-grid').innerHTML =
+      '<div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--text-secondary)">No data for the last 24 hours.</div>';
+    return;
+  }
+  const avgAll  = niches.reduce((a, n) => a + n.avg_compound, 0) / niches.length;
+  const bull    = niches.filter(n => n.avg_compound >=  .05).length;
+  const bear    = niches.filter(n => n.avg_compound <= -.05).length;
+  const top     = [...niches].sort((a, b) => b.avg_compound - a.avg_compound)[0];
+  const bot     = [...niches].sort((a, b) => a.avg_compound - b.avg_compound)[0];
+  const totalHL = niches.reduce((a, n) => a + n.count, 0);
+  const direction = avgAll >= .05 ? '↑ Broadly bullish' : avgAll <= -.05 ? '↓ Broadly bearish' : '→ Mixed signals';
+
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi-card c-blue">
       <div class="kpi-label">Market Avg Score</div>
       <div class="kpi-value" style="color:${clr(avgAll)}">${fmt(avgAll)}</div>
-      <div class="kpi-sub">${direction} · ${NICHES.length} niches</div>
+      <div class="kpi-sub">${direction} · ${niches.length} niches</div>
       <span class="kpi-icon">📊</span>
     </div>
     <div class="kpi-card c-green">
       <div class="kpi-label">Most Bullish Niche</div>
       <div class="kpi-value" style="color:#22c55e;font-size:1.25rem;line-height:1.2">${top.icon} ${top.name}</div>
-      <div class="kpi-sub">${fmt(top.avg)} VADER · ${top.n} headlines</div>
+      <div class="kpi-sub">${fmt(top.avg_compound)} VADER · ${top.count} headlines</div>
       <span class="kpi-icon">🚀</span>
     </div>
     <div class="kpi-card c-red">
       <div class="kpi-label">Most Bearish Niche</div>
       <div class="kpi-value" style="color:#ef4444;font-size:1.25rem;line-height:1.2">${bot.icon} ${bot.name}</div>
-      <div class="kpi-sub">${fmt(bot.avg)} VADER · ${bot.n} headlines</div>
+      <div class="kpi-sub">${fmt(bot.avg_compound)} VADER · ${bot.count} headlines</div>
       <span class="kpi-icon">📉</span>
     </div>
     <div class="kpi-card c-yellow">
       <div class="kpi-label">Headlines Analyzed</div>
       <div class="kpi-value">${totalHL.toLocaleString()}</div>
-      <div class="kpi-sub">${bull} bullish · ${NICHES.length-bull-bear} neutral · ${bear} bearish niches</div>
+      <div class="kpi-sub">${bull} bullish · ${niches.length - bull - bear} neutral · ${bear} bearish niches</div>
       <span class="kpi-icon">📰</span>
     </div>
   `;
-})();
+}
 
 // ══════════════════════════════════════════════════════════
 //  BAR CHART  (horizontal, sorted ascending)
 // ══════════════════════════════════════════════════════════
-(function(){
-  Chart.unregister(ChartDataLabels); // register manually per chart
-  const sorted = [...NICHES].sort((a,b)=>a.avg-b.avg);
-  const labels = sorted.map(n=>`${n.icon}  ${n.name}`);
-  const data   = sorted.map(n=>n.avg);
+function renderBarChart(niches) {
+  Chart.unregister(ChartDataLabels);
+  const sorted = [...niches].sort((a, b) => a.avg_compound - b.avg_compound);
+  const labels = sorted.map(n => `${n.icon}  ${n.name}`);
+  const data   = sorted.map(n => n.avg_compound);
   const colors = data.map(barClr);
 
-  new Chart(document.getElementById('barChart'),{
-    type:'bar',
-    plugins:[ChartDataLabels],
-    data:{
+  if (barChartInst) { barChartInst.destroy(); barChartInst = null; }
+
+  barChartInst = new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    plugins: [ChartDataLabels],
+    data: {
       labels,
-      datasets:[{
-        data, backgroundColor:colors,
-        borderColor:colors.map(c=>c.replace('.85','.99')),
-        borderWidth:1, borderRadius:4,
-      }]
+      datasets: [{
+        data, backgroundColor: colors,
+        borderColor: colors.map(c => c.replace('.85', '.99')),
+        borderWidth: 1, borderRadius: 4,
+      }],
     },
-    options:{
-      indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{
-          callbacks:{
-            title: ctx=>`${ctx[0].label.trim()}`,
-            label: ctx=>` VADER: ${fmt(ctx.raw)}   ${lbl(ctx.raw)==='positive'?'● Bullish':lbl(ctx.raw)==='negative'?'● Bearish':'● Neutral'}`,
-            afterLabel: ctx=>{
-              const n=NICHES.find(x=>x.avg===ctx.raw);
-              return n ? ` ${n.n} headlines analyzed` : '';
-            }
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title:      ctx => `${ctx[0].label.trim()}`,
+            label:      ctx => ` VADER: ${fmt(ctx.raw)}   ${lbl(ctx.raw) === 'positive' ? '● Bullish' : lbl(ctx.raw) === 'negative' ? '● Bearish' : '● Neutral'}`,
+            afterLabel: ctx => {
+              const n = sorted[ctx.dataIndex];
+              return n ? ` ${n.count} headlines analyzed` : '';
+            },
           },
-          backgroundColor:'#0d0d0d', borderColor:'#2a2a2a', borderWidth:1,
-          titleColor:'#ffffff', bodyColor:'#a0a0a0', padding:10,
+          backgroundColor: '#0d0d0d', borderColor: '#2a2a2a', borderWidth: 1,
+          titleColor: '#ffffff', bodyColor: '#a0a0a0', padding: 10,
         },
-        datalabels:{
-          formatter: v=>fmt(v),
-          color: ctx=>clr(ctx.dataset.data[ctx.dataIndex]),
-          font:{weight:'700',size:11},
-          anchor:'end', align:'end', offset:4,
-        }
-      },
-      scales:{
-        x:{
-          min:-0.45, max:0.6,
-          grid:{color: ctx=> ctx.tick.value===0?'rgba(255,255,255,.3)':'rgba(60,60,60,.5)'},
-          ticks:{color:'#707070',font:{size:10.5}},
+        datalabels: {
+          formatter: v => fmt(v),
+          color:  ctx => clr(ctx.dataset.data[ctx.dataIndex]),
+          font:   { weight: '700', size: 11 },
+          anchor: 'end', align: 'end', offset: 4,
         },
-        y:{
-          afterFit(scale){ scale.width = Math.max(scale.width, 140); },
-          grid:{display:false},
-          ticks:{color:'#e0e0e0',font:{size:11.5}, padding:4},
-        }
       },
-      animation:{duration:700,easing:'easeOutQuart'},
-      layout:{padding:{right:55}},
-    }
+      scales: {
+        x: {
+          min: -0.45, max: 0.6,
+          grid:  { color: ctx => ctx.tick.value === 0 ? 'rgba(255,255,255,.3)' : 'rgba(60,60,60,.5)' },
+          ticks: { color: '#707070', font: { size: 10.5 } },
+        },
+        y: {
+          afterFit(scale) { scale.width = Math.max(scale.width, 140); },
+          grid:  { display: false },
+          ticks: { color: '#e0e0e0', font: { size: 11.5 }, padding: 4 },
+        },
+      },
+      animation: { duration: 700, easing: 'easeOutQuart' },
+      layout:    { padding: { right: 55 } },
+    },
   });
-})();
+}
 
 // ══════════════════════════════════════════════════════════
 //  DONUT CHART
 // ══════════════════════════════════════════════════════════
-(function(){
-  const all = NICHES.flatMap(n=>n.hl);
-  const pos = all.filter(h=>h.s>= .05).length;
-  const neu = all.filter(h=>h.s> -.05&&h.s<.05).length;
-  const neg = all.filter(h=>h.s<=-.05).length;
-  const total = pos+neu+neg;
+function renderDonutChart(niches) {
+  const pos   = niches.reduce((a, n) => a + (n.count_pos || 0), 0);
+  const neu   = niches.reduce((a, n) => a + (n.count_neu || 0), 0);
+  const neg   = niches.reduce((a, n) => a + (n.count_neg || 0), 0);
+  const total = pos + neu + neg;
 
-  new Chart(document.getElementById('donutChart'),{
-    type:'doughnut',
-    data:{
-      labels:['Bullish','Neutral','Bearish'],
-      datasets:[{
-        data:[pos,neu,neg],
-        backgroundColor:['rgba(34,197,94,.8)','rgba(234,179,8,.8)','rgba(239,68,68,.8)'],
-        borderColor:['#22c55e','#eab308','#ef4444'],
-        borderWidth:2, hoverOffset:7,
-      }]
+  if (donutChartInst) { donutChartInst.destroy(); donutChartInst = null; }
+
+  donutChartInst = new Chart(document.getElementById('donutChart'), {
+    type: 'doughnut',
+    data: {
+      labels:   ['Bullish', 'Neutral', 'Bearish'],
+      datasets: [{
+        data:            [pos, neu, neg],
+        backgroundColor: ['rgba(34,197,94,.8)', 'rgba(234,179,8,.8)', 'rgba(239,68,68,.8)'],
+        borderColor:     ['#22c55e', '#eab308', '#ef4444'],
+        borderWidth: 2, hoverOffset: 7,
+      }],
     },
-    options:{
-      responsive:true, maintainAspectRatio:false, cutout:'70%',
-      plugins:{
-        legend:{display:false},
-        tooltip:{
-          callbacks:{
-            label:ctx=>` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)`,
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '70%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.label}: ${ctx.raw} (${total ? Math.round(ctx.raw / total * 100) : 0}%)`,
           },
-          backgroundColor:'#0d0d0d',borderColor:'#2a2a2a',borderWidth:1,
-          titleColor:'#ffffff',bodyColor:'#a0a0a0',padding:10,
-        }
-      }
-    }
+          backgroundColor: '#0d0d0d', borderColor: '#2a2a2a', borderWidth: 1,
+          titleColor: '#ffffff', bodyColor: '#a0a0a0', padding: 10,
+        },
+      },
+    },
   });
 
-  const items=[
-    {label:'Bullish',count:pos,color:'#22c55e',bg:'rgba(34,197,94,.12)'},
-    {label:'Neutral',count:neu,color:'#eab308',bg:'rgba(234,179,8,.12)'},
-    {label:'Bearish',count:neg,color:'#ef4444',bg:'rgba(239,68,68,.12)'},
+  const items = [
+    { label: 'Bullish', count: pos, color: '#22c55e', bg: 'rgba(34,197,94,.12)' },
+    { label: 'Neutral', count: neu, color: '#eab308', bg: 'rgba(234,179,8,.12)' },
+    { label: 'Bearish', count: neg, color: '#ef4444', bg: 'rgba(239,68,68,.12)' },
   ];
-  document.getElementById('d-legend').innerHTML=items.map(it=>`
+  document.getElementById('d-legend').innerHTML = items.map(it => `
     <div class="d-legend-row">
       <div style="display:flex;align-items:center">
         <div class="d-dot" style="background:${it.color}"></div>
         <span class="d-label">${it.label}</span>
       </div>
       <div style="display:flex;align-items:center">
-        <span class="d-pct" style="color:${it.color};background:${it.bg}">${Math.round(it.count/total*100)}%</span>
+        <span class="d-pct" style="color:${it.color};background:${it.bg}">${total ? Math.round(it.count / total * 100) : 0}%</span>
         <span class="d-count">${it.count}</span>
       </div>
     </div>`).join('');
-})();
+}
 
 // ══════════════════════════════════════════════════════════
 //  HEADLINE TABLE
 // ══════════════════════════════════════════════════════════
-const allHL = NICHES.flatMap(n=>n.hl.map(h=>({...h,niche:n.name,icon:n.icon})));
-let filtered = [...allHL];
+let allHL    = [];
+let filtered = [];
 let curPage  = 1;
 const PER    = 15;
 
-// populate niche filter
-const nicheSelect = document.getElementById('f-niche');
-NICHES.forEach(n=>{
-  const o=document.createElement('option');
-  o.value=n.name; o.textContent=`${n.icon} ${n.name}`;
-  nicheSelect.appendChild(o);
-});
-
-function applyFilters(){
-  const q   = document.getElementById('q').value.toLowerCase();
-  const fn  = document.getElementById('f-niche').value;
-  const fs  = document.getElementById('f-sent').value;
-  filtered  = allHL.filter(h=>{
-    if(q  && !h.t.toLowerCase().includes(q) && !h.src.toLowerCase().includes(q)) return false;
-    if(fn && h.niche!==fn) return false;
-    if(fs && lbl(h.s)!==fs) return false;
+function applyFilters() {
+  const q  = document.getElementById('q').value.toLowerCase();
+  const fn = document.getElementById('f-niche').value;
+  const fs = document.getElementById('f-sent').value;
+  filtered = allHL.filter(h => {
+    if (q  && !h.t.toLowerCase().includes(q) && !h.src.toLowerCase().includes(q)) return false;
+    if (fn && h.niche !== fn) return false;
+    if (fs && lbl(h.s) !== fs) return false;
     return true;
   });
-  curPage=1; renderTable();
+  curPage = 1;
+  renderTable();
 }
 
-function renderTable(){
-  const start=(curPage-1)*PER, end=start+PER, tot=filtered.length;
-  document.getElementById('feed-sub').textContent=`${tot} headline${tot!==1?'s':''} · ${NICHES.length} niches`;
-  document.getElementById('tbody').innerHTML=filtered.slice(start,end).map(h=>{
-    const l=lbl(h.s), c=clr(h.s), sign=h.s>=0?'+':'';
-    const barW=Math.min(Math.abs(h.s)*100,100);
+function renderTable() {
+  const start = (curPage - 1) * PER, end = start + PER, tot = filtered.length;
+  document.getElementById('feed-sub').textContent =
+    `${tot} headline${tot !== 1 ? 's' : ''} · last 24 hours`;
+  document.getElementById('tbody').innerHTML = filtered.slice(start, end).map(h => {
+    const l = lbl(h.s), c = clr(h.s), sign = h.s >= 0 ? '+' : '';
+    const barW  = Math.min(Math.abs(h.s) * 100, 100);
+    const title = h.url
+      ? `<a href="${h.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${h.t}</a>`
+      : h.t;
     return `<tr>
       <td><span class="niche-tag">${h.icon} ${h.niche}</span></td>
       <td>
         <span class="niche-label-mobile">${h.icon} ${h.niche}</span>
-        <div class="hl-txt">${h.t}</div>
-        <div class="hl-meta-mobile">${h.src} · ${h.d}, 2026</div>
+        <div class="hl-txt">${title}</div>
+        <div class="hl-meta-mobile">${h.src} · ${h.d}</div>
       </td>
       <td>
         <div class="score-cell">
@@ -831,26 +738,115 @@ function renderTable(){
           <div class="score-track"><div class="score-fill" style="width:${barW}%;background:${c}"></div></div>
         </div>
       </td>
-      <td><span class="sent-badge ${l}">${l==='positive'?'Bullish':l==='negative'?'Bearish':'Neutral'}</span></td>
+      <td><span class="sent-badge ${l}">${l === 'positive' ? 'Bullish' : l === 'negative' ? 'Bearish' : 'Neutral'}</span></td>
       <td><span class="src-txt">${h.src}</span></td>
-      <td><span class="src-txt">${h.d}, 2026</span></td>
+      <td><span class="src-txt">${h.d}</span></td>
     </tr>`;
   }).join('');
-  document.getElementById('pager-info').textContent=
-    `Showing ${Math.min(start+1,tot)}–${Math.min(end,tot)} of ${tot}`;
-  document.getElementById('btn-prev').disabled=curPage===1;
-  document.getElementById('btn-next').disabled=curPage>=Math.ceil(tot/PER);
+  document.getElementById('pager-info').textContent =
+    `Showing ${Math.min(start + 1, tot)}–${Math.min(end, tot)} of ${tot}`;
+  document.getElementById('btn-prev').disabled = curPage === 1;
+  document.getElementById('btn-next').disabled = curPage >= Math.ceil(tot / PER);
 }
 
-function page(d){
-  curPage=Math.max(1,Math.min(Math.ceil(filtered.length/PER),curPage+d));
+function page(d) {
+  curPage = Math.max(1, Math.min(Math.ceil(filtered.length / PER), curPage + d));
   renderTable();
 }
 
-['q','f-niche','f-sent'].forEach(id=>
-  document.getElementById(id).addEventListener(id==='q'?'input':'change',applyFilters)
+// ══════════════════════════════════════════════════════════
+//  DATA LOADING
+// ══════════════════════════════════════════════════════════
+function hlFromApi(h) {
+  return {
+    t:         h.title,
+    s:         h.compound,
+    src:       h.source  || '—',
+    d:         formatDate(h.published),
+    published: h.published || '',
+    niche:     h.niche,
+    icon:      iconOf(h.niche),
+    url:       h.url     || '',
+  };
+}
+
+async function loadDashboard() {
+  document.getElementById('kpi-grid').innerHTML =
+    '<div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--text-secondary);font-size:.85rem">⏳ Loading live data…</div>';
+
+  try {
+    // Round 1 — sentiment aggregates (gives us niche list + KPI data)
+    const sentimentData = await fetch(`${API_URL}/api/sentiment`)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+
+    const niches = sentimentData.map(s => ({
+      name:         s.niche,
+      icon:         iconOf(s.niche),
+      avg_compound: s.avg_compound,
+      avg_pos:      s.avg_pos,
+      avg_neg:      s.avg_neg,
+      count:        s.count,
+      count_pos:    s.count_pos,
+      count_neg:    s.count_neg,
+      count_neu:    s.count_neu,
+    }));
+
+    renderKPIs(niches);
+    renderBarChart(niches);
+    renderDonutChart(niches);
+
+    // Populate niche filter dropdown
+    const nicheSelect = document.getElementById('f-niche');
+    nicheSelect.innerHTML = '<option value="">All Niches</option>';
+    niches.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n.name; o.textContent = `${n.icon} ${n.name}`;
+      nicheSelect.appendChild(o);
+    });
+
+    // Update header stats line
+    const totalHL   = niches.reduce((a, n) => a + n.count, 0);
+    const headerSub = document.querySelector('.header p');
+    if (headerSub) {
+      headerSub.textContent =
+        `VADER NLP Analysis · ${niches.length} Market Niches · ${totalHL.toLocaleString()} Headlines Analyzed`;
+    }
+
+    // Round 2 — fetch 20 headlines per niche in parallel, then flatten + sort
+    const hlArrays = await Promise.all(
+      niches.map(n =>
+        fetch(`${API_URL}/api/headlines?niche=${encodeURIComponent(n.name)}`)
+          .then(r => r.json())
+          .catch(() => [])
+      )
+    );
+    allHL = hlArrays
+      .flat()
+      .map(hlFromApi)
+      .sort((a, b) => (b.published > a.published ? 1 : b.published < a.published ? -1 : 0));
+
+    filtered = [...allHL];
+    renderTable();
+
+  } catch (err) {
+    console.error('Dashboard load failed:', err);
+    document.getElementById('kpi-grid').innerHTML = `
+      <div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--negative);font-size:.85rem">
+        ⚠️ Could not reach the API at <code>${API_URL}</code>.<br>
+        Make sure the backend is running: <code>python3 backend.py</code>
+      </div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  EVENT LISTENERS
+// ══════════════════════════════════════════════════════════
+['q', 'f-niche', 'f-sent'].forEach(id =>
+  document.getElementById(id).addEventListener(id === 'q' ? 'input' : 'change', applyFilters)
 );
-renderTable();
+
+// ── boot ──────────────────────────────────────────────────
+loadDashboard();
 </script>
 </body>
 </html>
