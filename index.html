@@ -223,10 +223,11 @@
 
     /* pagination */
     .pager {
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; justify-content: center;
       margin-top: .9rem; font-size: .78rem; color: var(--text-secondary);
     }
-    .pager-btns { display: flex; gap: .5rem; }
+    .pager-btns { display: flex; gap: .5rem; align-items: center; }
+    #pager-info { padding: 0 .4rem; white-space: nowrap; }
     .btn {
       background: var(--bg-tertiary); border: 1px solid var(--border);
       border-radius: 6px; padding: .35rem .8rem;
@@ -530,10 +531,12 @@
       </table>
     </div>
     <div class="pager">
-      <span id="pager-info"></span>
       <div class="pager-btns">
-        <button class="btn" id="btn-prev" onclick="page(-1)">← Prev</button>
-        <button class="btn" id="btn-next" onclick="page(1)">Next →</button>
+        <button class="btn" id="btn-first" onclick="pageFirst()">« First</button>
+        <button class="btn" id="btn-prev"  onclick="page(-1)">← Prev</button>
+        <span id="pager-info"></span>
+        <button class="btn" id="btn-next"  onclick="page(1)">Next →</button>
+        <button class="btn" id="btn-last"  onclick="pageLast()">Last »</button>
       </div>
     </div>
   </div>
@@ -883,16 +886,20 @@ function renderTable() {
       <td><span class="src-txt">${h.d}</span></td>
     </tr>`;
   }).join('');
-  document.getElementById('pager-info').textContent =
-    `Showing ${Math.min(start + 1, tot)}–${Math.min(end, tot)} of ${tot}`;
-  document.getElementById('btn-prev').disabled = curPage === 1;
-  document.getElementById('btn-next').disabled = curPage >= Math.ceil(tot / PER);
+  const totalPages = Math.ceil(tot / PER) || 1;
+  document.getElementById('pager-info').textContent = `Page ${curPage} of ${totalPages}`;
+  document.getElementById('btn-first').disabled = curPage === 1;
+  document.getElementById('btn-prev').disabled  = curPage === 1;
+  document.getElementById('btn-next').disabled  = curPage >= totalPages;
+  document.getElementById('btn-last').disabled  = curPage >= totalPages;
 }
 
 function page(d) {
   curPage = Math.max(1, Math.min(Math.ceil(filtered.length / PER), curPage + d));
   renderTable();
 }
+function pageFirst() { curPage = 1; renderTable(); }
+function pageLast()  { curPage = Math.ceil(filtered.length / PER) || 1; renderTable(); }
 
 // ══════════════════════════════════════════════════════════
 //  DATA LOADING

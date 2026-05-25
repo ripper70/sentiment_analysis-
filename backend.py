@@ -182,13 +182,14 @@ def get_headlines(
         params.append(date_to)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    limit = 500 if (date_from or date_to) else 20
     return db_query(
         f"""
         SELECT niche, title, source, url, published, compound, pos, neg
         FROM headlines
         {where}
         ORDER BY fetched DESC, published DESC
-        LIMIT 20
+        LIMIT {limit}
         """,
         tuple(params),
     )
