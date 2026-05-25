@@ -1,9 +1,11 @@
 """
 fetch_news.py
-Pull headlines from NewsAPI + The Guardian, score with VADER, store in SQLite.
+Pull headlines from NewsAPI + The Guardian, score with VADER, store in DB.
+Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite.
 Run:  python3 fetch_news.py
 """
 
+import os
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -14,19 +16,37 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 from config import GUARDIAN_API_KEY, NEWS_API_KEY, NICHES
 
-DB_PATH  = "sentiment.db"
+# ── db config ──────────────────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL")
+DB_PATH      = "sentiment.db"
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+
 api      = NewsApiClient(api_key=NEWS_API_KEY)
 analyzer = SentimentIntensityAnalyzer()
 
 GUARDIAN_URL = "https://content.guardianapis.com/search"
 
 
-# ── database setup ────────────────────────────────────────────────────────────
+# ── database setup ─────────────────────────────────────────────────────────────
+
+def get_conn():
+    """Return a database connection (PostgreSQL or SQLite)."""
+    if USE_POSTGRES:
+        return psycopg2.connect(DATABASE_URL)
+    return sqlite3.connect(DB_PATH)
+
 
 def init_db(conn):
-    conn.execute("""
+    """Create the headlines table and indexes if they don't exist."""
+    # id column syntax differs between PostgreSQL and SQLite
+    id_col = "SERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    cur = conn.cursor()
+    cur.execute(f"""
         CREATE TABLE IF NOT EXISTS headlines (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            id        {id_col},
             niche     TEXT    NOT NULL,
             title     TEXT    NOT NULL,
             source    TEXT,
@@ -39,18 +59,18 @@ def init_db(conn):
             fetched   TEXT    NOT NULL
         )
     """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_niche    ON headlines(niche)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_fetched  ON headlines(fetched)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_niche   ON headlines(niche)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_fetched ON headlines(fetched)")
     conn.commit()
 
 
-# ── scoring ───────────────────────────────────────────────────────────────────
+# ── scoring ────────────────────────────────────────────────────────────────────
 
 def score(text: str) -> dict:
     return analyzer.polarity_scores(text)
 
 
-# ── fetchers ──────────────────────────────────────────────────────────────────
+# ── fetchers ───────────────────────────────────────────────────────────────────
 
 def fetch_newsapi(niche: str, keywords: list[str]) -> list[dict]:
     """Return raw article dicts from NewsAPI for every keyword in a niche."""
@@ -115,14 +135,14 @@ def fetch_guardian(niche: str, keywords: list[str]) -> list[dict]:
     return articles
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
+# ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    conn       = sqlite3.connect(DB_PATH)
+    conn       = get_conn()
     init_db(conn)
     fetched_at = datetime.now(timezone.utc).isoformat()
 
-    rows: list[tuple]      = []
+    rows: list[tuple]           = []
     niche_counts: dict[str, int] = {}
 
     print(f"Fetching from NewsAPI + The Guardian for {len(NICHES)} niches…\n")
@@ -166,15 +186,21 @@ def main():
             + (f", {deduped} dupes removed)" if deduped else ")")
         )
 
-    conn.executemany("""
+    # ── bulk insert ───────────────────────────────────────────────────────────
+    placeholder = "%s" if USE_POSTGRES else "?"
+    insert_sql  = f"""
         INSERT INTO headlines
           (niche, title, source, url, published, compound, pos, neu, neg, fetched)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    """, rows)
+        VALUES ({', '.join([placeholder] * 10)})
+    """
+    cur = conn.cursor()
+    cur.executemany(insert_sql, rows)
     conn.commit()
+    cur.close()
     conn.close()
 
-    print(f"\n✅  Done — {len(rows)} headlines saved to {DB_PATH}")
+    db_label = DATABASE_URL.split("@")[-1] if USE_POSTGRES else DB_PATH
+    print(f"\n✅  Done — {len(rows)} headlines saved to {db_label}")
 
 
 if __name__ == "__main__":

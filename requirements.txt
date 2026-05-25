@@ -4,3 +4,4 @@ schedule
 newsapi-python
 fastapi
 uvicorn[standard]
+psycopg2-binary

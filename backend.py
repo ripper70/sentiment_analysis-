@@ -10,6 +10,7 @@ Endpoints:
     GET /api/headlines   — 20 most recent headlines; ?niche= filters to one niche
 """
 
+import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,7 +21,13 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── config ─────────────────────────────────────────────────────────────────────
-DB_PATH = Path(__file__).parent / "sentiment.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+DB_PATH      = Path(__file__).parent / "sentiment.db"
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
 
 # ── app ────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Sentiment Pulse API", version="1.0.0")
@@ -34,11 +41,27 @@ app.add_middleware(
 )
 
 
-# ── db helper ──────────────────────────────────────────────────────────────────
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# ── db helpers ─────────────────────────────────────────────────────────────────
+def db_query(query: str, params: tuple = ()) -> list[dict]:
+    """
+    Run a SELECT query and return rows as a list of dicts.
+    Uses PostgreSQL (DATABASE_URL) when available, falls back to SQLite.
+    Write queries with ? placeholders; they are rewritten to %s for PostgreSQL.
+    """
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(query.replace("?", "%s"), params)
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return rows
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(query, params).fetchall()]
+        conn.close()
+        return rows
 
 
 # ── routes ─────────────────────────────────────────────────────────────────────
@@ -51,15 +74,14 @@ def sentiment_summary():
     Sorted by avg_compound descending (most bullish first).
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    conn = get_conn()
-    rows = conn.execute(
+    rows = db_query(
         """
         SELECT
             niche,
-            ROUND(AVG(compound), 4)  AS avg_compound,
-            ROUND(AVG(pos),      4)  AS avg_pos,
-            ROUND(AVG(neg),      4)  AS avg_neg,
-            COUNT(*)                 AS count,
+            AVG(compound)  AS avg_compound,
+            AVG(pos)       AS avg_pos,
+            AVG(neg)       AS avg_neg,
+            COUNT(*)       AS count,
             SUM(CASE WHEN compound >=  0.05 THEN 1 ELSE 0 END) AS count_pos,
             SUM(CASE WHEN compound <= -0.05 THEN 1 ELSE 0 END) AS count_neg,
             SUM(CASE WHEN compound >  -0.05
@@ -70,9 +92,13 @@ def sentiment_summary():
         ORDER BY avg_compound DESC
         """,
         (cutoff,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    )
+    # Round in Python so the same query works for both SQLite and PostgreSQL
+    for row in rows:
+        row["avg_compound"] = round(row["avg_compound"] or 0, 4)
+        row["avg_pos"]      = round(row["avg_pos"]      or 0, 4)
+        row["avg_neg"]      = round(row["avg_neg"]      or 0, 4)
+    return rows
 
 
 @app.get("/api/headlines")
@@ -84,9 +110,8 @@ def get_headlines(
     Pass ?niche=<name> to restrict results to a single niche;
     omit the parameter to get the 20 most recent across all niches.
     """
-    conn = get_conn()
     if niche:
-        rows = conn.execute(
+        return db_query(
             """
             SELECT niche, title, source, url, published, compound, pos, neg
             FROM headlines
@@ -95,18 +120,15 @@ def get_headlines(
             LIMIT 20
             """,
             (niche,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT niche, title, source, url, published, compound, pos, neg
-            FROM headlines
-            ORDER BY fetched DESC, published DESC
-            LIMIT 20
-            """
-        ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+        )
+    return db_query(
+        """
+        SELECT niche, title, source, url, published, compound, pos, neg
+        FROM headlines
+        ORDER BY fetched DESC, published DESC
+        LIMIT 20
+        """
+    )
 
 
 # ── entrypoint ─────────────────────────────────────────────────────────────────
