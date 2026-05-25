@@ -380,7 +380,6 @@
   <div>
     <h1>📈 Market Sentiment Pulse Dashboard</h1>
     <p class="header-subtitle">Real-time NLP sentiment analysis across 15 consumer markets — powered by live news data.</p>
-    <p>VADER NLP Analysis · 15 Market Niches · 1,306 Headlines Analyzed</p>
   </div>
   <div class="header-right">
     <div class="last-updated">
@@ -475,16 +474,16 @@ const API_URL = 'https://worker-production-be23.up.railway.app';
 //  NICHE ICONS  (maps DB niche names → display emoji)
 // ══════════════════════════════════════════════════════════
 const NICHE_ICONS = {
-  'Energy & Oil':          '🛢️',
+  'Energy & Oil':          '⛽',
   'Real Estate':           '🏠',
   'Banking & Finance':     '🏦',
   'Food & Agriculture':    '🌾',
   'Retail & E-Commerce':   '🛒',
-  'Social Media & AdTech': '📲',
-  'Travel & Tourism':      '✈️',
+  'Social Media & AdTech': '📣',
+  'Travel & Tourism':      '🛫',
   'Gaming & Esports':      '🎮',
   'Healthcare & Biotech':  '🧬',
-  'Semiconductors':        '🔬',
+  'Semiconductors':        '💾',
   'Cybersecurity':         '🔒',
   'Electric Vehicles':     '⚡',
   'Bitcoin & Crypto':      '₿',
@@ -630,7 +629,7 @@ function renderBarChart(niches) {
           ticks: { color: '#707070', font: { size: 10.5 } },
         },
         y: {
-          afterFit(scale) { scale.width = Math.max(scale.width, 140); },
+          afterFit(scale) { scale.width = Math.max(scale.width, window.innerWidth <= 768 ? 160 : 140); },
           grid:  { display: false },
           ticks: { color: '#e0e0e0', font: { size: 11.5 }, padding: 4 },
         },
