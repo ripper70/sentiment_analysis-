@@ -37,6 +37,13 @@ RSS_FEEDS = [
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "https://www.cnbc.com/id/10001147/device/rss/rss.html",
     "https://feeds.bloomberg.com/markets/news.rss",
+    "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+    "https://feeds.a.dj.com/rss/RSSWSJD.xml",
+    "https://finance.yahoo.com/news/rssindex",
+    "https://www.investing.com/rss/news.rss",
+    "https://fortune.com/feed/",
+    "https://axios.com/feeds/feed.rss",
 ]
 
 
