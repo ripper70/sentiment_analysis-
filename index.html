@@ -241,6 +241,66 @@
       border-top: 1px solid var(--border);
     }
 
+    /* ── DATE FILTER BAR ── */
+    .date-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .date-filter-group {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .date-label {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .date-input {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .45rem .65rem;
+      color: var(--text-primary);
+      font-size: .84rem;
+      outline: none;
+      transition: border-color .2s;
+      cursor: pointer;
+      color-scheme: dark;        /* native calendar picker uses dark palette */
+    }
+    .date-input:focus { border-color: var(--accent); }
+    .date-filter-actions { display: flex; gap: .5rem; }
+    .btn-apply {
+      background: rgba(56,189,248,.14);
+      border-color: rgba(56,189,248,.4);
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .btn-apply:hover:not(:disabled) {
+      background: rgba(56,189,248,.25);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .date-range-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      background: rgba(56,189,248,.1);
+      border: 1px solid rgba(56,189,248,.28);
+      border-radius: 9999px;
+      padding: .22rem .75rem;
+      font-size: .71rem;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
     @media (max-width: 1100px) { .charts-grid { grid-template-columns: 1fr; } }
 
     /* ── MOBILE  (≤ 768 px) ── */
@@ -371,6 +431,11 @@
 
       /* Footer */
       footer { font-size: .68rem; padding: 1rem; margin-top: 1.25rem; }
+
+      /* Date filter bar — stack inputs vertically so they don't overlap */
+      .date-filter-bar    { flex-direction: column; align-items: flex-start; gap: .5rem; margin-bottom: 1rem; }
+      .date-filter-group  { width: 100%; }
+      .date-input         { flex: 1; min-width: 0; }
     }
   </style>
 </head>
@@ -391,6 +456,23 @@
 </header>
 
 <div class="container">
+
+  <!-- Date Range Filter -->
+  <div class="date-filter-bar">
+    <div class="date-filter-group">
+      <label class="date-label" for="date-from">From</label>
+      <input type="date" class="date-input" id="date-from">
+    </div>
+    <div class="date-filter-group">
+      <label class="date-label" for="date-to">To</label>
+      <input type="date" class="date-input" id="date-to">
+    </div>
+    <div class="date-filter-actions">
+      <button class="btn btn-apply" onclick="applyDateRange()">Apply</button>
+      <button class="btn" onclick="resetDateRange()">Reset</button>
+    </div>
+    <div class="date-range-badge" id="date-range-badge" style="display:none"></div>
+  </div>
 
   <!-- KPIs -->
   <div class="kpi-grid" id="kpi-grid"></div>
@@ -515,6 +597,51 @@ function formatDate(isoStr) {
 }
 
 // ══════════════════════════════════════════════════════════
+//  DATE RANGE  — state + controls
+// ══════════════════════════════════════════════════════════
+let activeDateFrom = null;   // 'YYYY-MM-DD' or null
+let activeDateTo   = null;
+
+function formatDateLabel(isoDate) {
+  // isoDate is 'YYYY-MM-DD'; use noon to avoid tz-shift edge cases
+  try {
+    const d = new Date(isoDate + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return isoDate; }
+}
+
+function applyDateRange() {
+  const fromVal = document.getElementById('date-from').value;
+  const toVal   = document.getElementById('date-to').value;
+  if (!fromVal && !toVal) { resetDateRange(); return; }
+
+  activeDateFrom = fromVal || null;
+  activeDateTo   = toVal   || null;
+
+  const parts = [];
+  if (activeDateFrom) parts.push(formatDateLabel(activeDateFrom));
+  if (activeDateTo)   parts.push(formatDateLabel(activeDateTo));
+  const label = parts.length === 2 ? `${parts[0]} – ${parts[1]}`
+              : activeDateFrom     ? `From ${parts[0]}`
+              :                      `To ${parts[0]}`;
+
+  const badge = document.getElementById('date-range-badge');
+  badge.textContent  = '📅 ' + label;
+  badge.style.display = '';
+
+  loadDashboard();
+}
+
+function resetDateRange() {
+  activeDateFrom = null;
+  activeDateTo   = null;
+  document.getElementById('date-from').value          = '';
+  document.getElementById('date-to').value            = '';
+  document.getElementById('date-range-badge').style.display = 'none';
+  loadDashboard();
+}
+
+// ══════════════════════════════════════════════════════════
 //  TIMESTAMPS  (updated on every refresh cycle)
 // ══════════════════════════════════════════════════════════
 function updateTimestamps() {
@@ -536,8 +663,9 @@ let donutChartInst = null;
 // ══════════════════════════════════════════════════════════
 function renderKPIs(niches) {
   if (!niches.length) {
+    const period = (activeDateFrom || activeDateTo) ? 'the selected date range' : 'the last 24 hours';
     document.getElementById('kpi-grid').innerHTML =
-      '<div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--text-secondary)">No data for the last 24 hours.</div>';
+      `<div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--text-secondary)">No data for ${period}.</div>`;
     return;
   }
   const avgAll  = niches.reduce((a, n) => a + n.avg_compound, 0) / niches.length;
@@ -719,8 +847,18 @@ function applyFilters() {
 
 function renderTable() {
   const start = (curPage - 1) * PER, end = start + PER, tot = filtered.length;
+  const periodLabel = (activeDateFrom || activeDateTo)
+    ? (() => {
+        const parts = [];
+        if (activeDateFrom) parts.push(formatDateLabel(activeDateFrom));
+        if (activeDateTo)   parts.push(formatDateLabel(activeDateTo));
+        return parts.length === 2 ? `${parts[0]} – ${parts[1]}`
+             : activeDateFrom     ? `from ${parts[0]}`
+             :                      `to ${parts[0]}`;
+      })()
+    : 'last 24 hours';
   document.getElementById('feed-sub').textContent =
-    `${tot} headline${tot !== 1 ? 's' : ''} · last 24 hours`;
+    `${tot} headline${tot !== 1 ? 's' : ''} · ${periodLabel}`;
   document.getElementById('tbody').innerHTML = filtered.slice(start, end).map(h => {
     const l = lbl(h.s), c = clr(h.s), sign = h.s >= 0 ? '+' : '';
     const barW  = Math.min(Math.abs(h.s) * 100, 100);
@@ -777,8 +915,14 @@ async function loadDashboard() {
     '<div style="grid-column:1/-1;text-align:center;padding:1.5rem;color:var(--text-secondary);font-size:.85rem">⏳ Loading live data…</div>';
 
   try {
+    // Build shared date query string (empty string when no dates active)
+    const _dateParams = new URLSearchParams();
+    if (activeDateFrom) _dateParams.set('date_from', activeDateFrom);
+    if (activeDateTo)   _dateParams.set('date_to',   activeDateTo);
+    const dateQS = _dateParams.toString() ? '?' + _dateParams.toString() : '';
+
     // Round 1 — sentiment aggregates (gives us niche list + KPI data)
-    const sentimentData = await fetch(`${API_URL}/api/sentiment`)
+    const sentimentData = await fetch(`${API_URL}/api/sentiment${dateQS}`)
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
 
     const niches = sentimentData.map(s => ({
@@ -816,11 +960,13 @@ async function loadDashboard() {
 
     // Round 2 — fetch 20 headlines per niche in parallel, then flatten + sort
     const hlArrays = await Promise.all(
-      niches.map(n =>
-        fetch(`${API_URL}/api/headlines?niche=${encodeURIComponent(n.name)}`)
+      niches.map(n => {
+        const hlP = new URLSearchParams(_dateParams);
+        hlP.set('niche', n.name);
+        return fetch(`${API_URL}/api/headlines?${hlP.toString()}`)
           .then(r => r.json())
-          .catch(() => [])
-      )
+          .catch(() => []);
+      })
     );
     allHL = hlArrays
       .flat()

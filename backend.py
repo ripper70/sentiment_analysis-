@@ -12,7 +12,7 @@ Endpoints:
 
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -66,16 +66,20 @@ def db_query(query: str, params: tuple = ()) -> list[dict]:
 
 # ── routes ─────────────────────────────────────────────────────────────────────
 @app.get("/api/sentiment")
-def sentiment_summary():
+def sentiment_summary(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD; filters by published date"),
+    date_to:   Optional[str] = Query(None, description="End date YYYY-MM-DD (inclusive); filters by published date"),
+):
     """
-    Per-niche sentiment aggregates for headlines fetched in the last 24 hours.
+    Per-niche sentiment aggregates.
+    Default (no dates): aggregates headlines fetched in the last 24 hours.
+    With date_from / date_to: aggregates headlines whose published date falls
+    within the given range (inclusive on both ends).
     Returns avg compound/pos/neg scores, total headline count, and per-label
     counts (count_pos / count_neg / count_neu) for each niche.
     Sorted by avg_compound descending (most bullish first).
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    rows = db_query(
-        """
+    _SQL = """
         SELECT
             niche,
             AVG(compound)  AS avg_compound,
@@ -87,12 +91,30 @@ def sentiment_summary():
             SUM(CASE WHEN compound >  -0.05
                       AND compound <   0.05 THEN 1 ELSE 0 END) AS count_neu
         FROM headlines
-        WHERE fetched >= ?
+        WHERE {where}
         GROUP BY niche
         ORDER BY avg_compound DESC
-        """,
-        (cutoff,),
-    )
+    """
+
+    if date_from or date_to:
+        conditions: list[str] = []
+        params: list[str]     = []
+        if date_from:
+            conditions.append("published >= ?")
+            params.append(date_from)
+        if date_to:
+            # Add one day so the entire to-date is included
+            try:
+                next_day = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
+            except ValueError:
+                next_day = date_to
+            conditions.append("published < ?")
+            params.append(next_day)
+        rows = db_query(_SQL.format(where=" AND ".join(conditions)), tuple(params))
+    else:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        rows = db_query(_SQL.format(where="fetched >= ?"), (cutoff,))
+
     # Round in Python so the same query works for both SQLite and PostgreSQL
     for row in rows:
         row["avg_compound"] = round(row["avg_compound"] or 0, 4)
@@ -103,31 +125,46 @@ def sentiment_summary():
 
 @app.get("/api/headlines")
 def get_headlines(
-    niche: Optional[str] = Query(None, description="Filter by niche name"),
+    niche:     Optional[str] = Query(None, description="Filter by niche name"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD; filters by published date"),
+    date_to:   Optional[str] = Query(None, description="End date YYYY-MM-DD (inclusive); filters by published date"),
 ):
     """
     Return the 20 most recent headlines.
-    Pass ?niche=<name> to restrict results to a single niche;
-    omit the parameter to get the 20 most recent across all niches.
+    Pass ?niche=<name> to restrict results to a single niche.
+    Pass ?date_from=YYYY-MM-DD and/or ?date_to=YYYY-MM-DD to restrict by
+    published date (inclusive on both ends).
+    All filters are combinable; omitting all gives the 20 most recent overall.
     """
+    conditions: list[str] = []
+    params: list[str]     = []
+
     if niche:
-        return db_query(
-            """
-            SELECT niche, title, source, url, published, compound, pos, neg
-            FROM headlines
-            WHERE niche = ?
-            ORDER BY fetched DESC, published DESC
-            LIMIT 20
-            """,
-            (niche,),
-        )
+        conditions.append("niche = ?")
+        params.append(niche)
+
+    if date_from:
+        conditions.append("published >= ?")
+        params.append(date_from)
+
+    if date_to:
+        try:
+            next_day = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
+        except ValueError:
+            next_day = date_to
+        conditions.append("published < ?")
+        params.append(next_day)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     return db_query(
-        """
+        f"""
         SELECT niche, title, source, url, published, compound, pos, neg
         FROM headlines
+        {where}
         ORDER BY fetched DESC, published DESC
         LIMIT 20
-        """
+        """,
+        tuple(params),
     )
 
 
