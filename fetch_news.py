@@ -1,15 +1,18 @@
 """
 fetch_news.py
-Pull headlines for all 15 niches from NewsAPI, score with VADER, store in SQLite.
+Pull headlines from NewsAPI, score with VADER, store in SQLite.
 Run:  python3 fetch_news.py
 """
 
-import sqlite3, requests, json, time
+import sqlite3, time
 from datetime import datetime, timezone
+
+from newsapi import NewsApiClient
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from config import NEWS_API_KEY, NICHES
 
 DB_PATH = "sentiment.db"
+api      = NewsApiClient(api_key=NEWS_API_KEY)
 analyzer = SentimentIntensityAnalyzer()
 
 
@@ -31,30 +34,9 @@ def init_db(conn):
             fetched   TEXT    NOT NULL
         )
     """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_niche ON headlines(niche)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_fetched ON headlines(fetched)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_niche    ON headlines(niche)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_fetched  ON headlines(fetched)")
     conn.commit()
-
-
-# ── NewsAPI fetch ─────────────────────────────────────────────────────────────
-
-def fetch_headlines(query: str, page_size: int = 20) -> list[dict]:
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q":        query,
-        "language": "en",
-        "sortBy":   "publishedAt",
-        "pageSize": page_size,
-        "apiKey":   NEWS_API_KEY,
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        return data.get("articles", [])
-    except Exception as e:
-        print(f"  [!] API error for '{query}': {e}")
-        return []
 
 
 # ── scoring ───────────────────────────────────────────────────────────────────
@@ -66,47 +48,56 @@ def score(text: str) -> dict:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
+    conn       = sqlite3.connect(DB_PATH)
     init_db(conn)
     fetched_at = datetime.now(timezone.utc).isoformat()
 
-    total = 0
+    rows: list[tuple] = []
+    niche_counts: dict[str, int] = {}
+
+    print(f"Fetching from NewsAPI for {len(NICHES)} niches…\n")
+
     for niche, keywords in NICHES.items():
-        query = " OR ".join(f'"{kw}"' for kw in keywords[:2])   # use top-2 keywords
-        print(f"Fetching: {niche} …", end=" ", flush=True)
-        articles = fetch_headlines(query)
+        niche_total = 0
+        for keyword in keywords:
+            try:
+                result = api.get_everything(
+                    q=keyword,
+                    language="en",
+                    sort_by="publishedAt",
+                    page_size=20,
+                )
+                articles = result.get("articles", [])
+                for a in articles:
+                    title = (a.get("title") or "").strip()
+                    if not title or title == "[Removed]":
+                        continue
+                    source    = (a.get("source") or {}).get("name", "")
+                    url       = a.get("url", "")
+                    published = a.get("publishedAt", "")
+                    sc        = score(title)
+                    rows.append((
+                        niche, title, source, url, published,
+                        sc["compound"], sc["pos"], sc["neu"], sc["neg"],
+                        fetched_at,
+                    ))
+                    niche_total += 1
+                time.sleep(0.25)   # stay well within rate limits
+            except Exception as e:
+                print(f"  [!] {niche} / '{keyword}': {e}")
 
-        rows = []
-        for a in articles:
-            title = (a.get("title") or "").strip()
-            if not title or title == "[Removed]":
-                continue
-            sc = score(title)
-            rows.append((
-                niche,
-                title,
-                a.get("source", {}).get("name"),
-                a.get("url"),
-                a.get("publishedAt"),
-                sc["compound"],
-                sc["pos"],
-                sc["neu"],
-                sc["neg"],
-                fetched_at,
-            ))
+        niche_counts[niche] = niche_total
+        print(f"  ✓  {niche:<25s} — {niche_total:3d} headlines")
 
-        conn.executemany("""
-            INSERT INTO headlines
-              (niche, title, source, url, published, compound, pos, neu, neg, fetched)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-        """, rows)
-        conn.commit()
-        print(f"{len(rows)} headlines saved.")
-        total += len(rows)
-        time.sleep(0.3)   # be polite to the API
-
+    conn.executemany("""
+        INSERT INTO headlines
+          (niche, title, source, url, published, compound, pos, neu, neg, fetched)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    """, rows)
+    conn.commit()
     conn.close()
-    print(f"\n✅  Done — {total} total headlines saved to {DB_PATH}")
+
+    print(f"\n✅  Done — {len(rows)} headlines saved to {DB_PATH}")
 
 
 if __name__ == "__main__":
