@@ -185,6 +185,10 @@
       border-radius: 6px; padding: .18rem .5rem;
       font-size: .7rem; font-weight: 600; color: var(--accent); white-space: nowrap;
     }
+    /* Niche label injected above headline text — desktop: hidden */
+    .niche-label-mobile {
+      display: none;
+    }
     .sent-badge {
       display: inline-block; border-radius: 6px; padding: .18rem .5rem;
       font-size: .68rem; font-weight: 700;
@@ -278,13 +282,33 @@
       .d-legend-row { font-size: .75rem; }
 
       /* ── Headline feed — eliminate horizontal scroll ──
-         Hide the Source and Date columns (cols 5 & 6) so the
-         remaining four columns fit comfortably in ≤768 px.    */
+         Hide the Niche column (col 1) and the Source/Date columns
+         (cols 5 & 6) so Headline and Score fill the width.
+         The niche is surfaced as a small label inside the headline
+         cell via .niche-label-mobile.                            */
+      .tbl-wrap thead th:nth-child(1),
+      .tbl-wrap tbody td:nth-child(1),
       .tbl-wrap thead th:nth-child(5),
       .tbl-wrap thead th:nth-child(6),
       .tbl-wrap tbody td:nth-child(5),
       .tbl-wrap tbody td:nth-child(6) {
         display: none;
+      }
+
+      /* Niche label — shown above headline text on mobile */
+      .niche-label-mobile {
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+        background: rgba(56,189,248,.08);
+        border: 1px solid rgba(56,189,248,.18);
+        border-radius: 5px;
+        padding: .12rem .42rem;
+        font-size: .62rem;
+        font-weight: 600;
+        color: var(--accent);
+        white-space: nowrap;
+        margin-bottom: .3rem;
       }
 
       /* Remove the mini progress bar from score cells
@@ -300,9 +324,6 @@
 
       /* Headline text — allow full wrap, no artificial max-width */
       .hl-txt { max-width: none; font-size: .78rem; line-height: 1.45; }
-
-      /* Niche tag — allow wrapping on very narrow screens */
-      .niche-tag { white-space: normal; word-break: break-word; font-size: .67rem; }
 
       /* Controls — stack vertically */
       .table-controls    { flex-direction: column; gap: .5rem; }
@@ -766,7 +787,10 @@ function renderTable(){
     const barW=Math.min(Math.abs(h.s)*100,100);
     return `<tr>
       <td><span class="niche-tag">${h.icon} ${h.niche}</span></td>
-      <td><div class="hl-txt">${h.t}</div></td>
+      <td>
+        <span class="niche-label-mobile">${h.icon} ${h.niche}</span>
+        <div class="hl-txt">${h.t}</div>
+      </td>
       <td>
         <div class="score-cell">
           <span class="score-num" style="color:${c}">${sign}${h.s.toFixed(3)}</span>
