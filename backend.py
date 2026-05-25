@@ -216,6 +216,26 @@ def cleanup_malformed_dates(
     return {"deleted": deleted}
 
 
+@app.get("/api/dedup")
+def dedup_headlines(
+    key: Optional[str] = Query(None, description="Secret key required to run dedup"),
+):
+    """
+    Remove duplicate headlines, keeping only the row with the lowest id for
+    each (title, source) combination.
+    Requires ?key=cleanup123.
+    Returns { "deleted": <count> }.
+    """
+    if key != _CLEANUP_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing key.")
+
+    deleted = db_execute(
+        "DELETE FROM headlines WHERE id NOT IN "
+        "(SELECT MIN(id) FROM headlines GROUP BY title, source)"
+    )
+    return {"deleted": deleted}
+
+
 # ── entrypoint ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     uvicorn.run("backend:app", host="0.0.0.0", port=8000, reload=True)
