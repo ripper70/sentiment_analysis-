@@ -226,10 +226,99 @@
     }
 
     @media (max-width: 1100px) { .charts-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 768px)  {
-      .kpi-grid  { grid-template-columns: repeat(2, 1fr); }
-      .container { padding: 1rem; }
-      .header    { flex-direction: column; align-items: flex-start; gap: .65rem; }
+
+    /* ── MOBILE  (≤ 768 px) ── */
+    @media (max-width: 768px) {
+
+      /* Header — stack title / meta vertically, tighten padding */
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: .65rem;
+        padding: .85rem 1rem;
+      }
+      .header h1       { font-size: 1.05rem; }
+      .header p        { font-size: .67rem; }
+      .header-right    { gap: .55rem; }
+      .last-updated    { font-size: .63rem; }
+
+      /* Container */
+      .container { padding: .85rem 1rem; }
+
+      /* KPI grid → 2 × 2 */
+      .kpi-grid          { grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; }
+      .kpi-card          { padding: .9rem 1rem; }
+      .kpi-label         { font-size: .62rem; }
+      .kpi-value         { font-size: 1.45rem; }
+      .kpi-sub           { font-size: .67rem; }
+      .kpi-icon          { font-size: 1.7rem; right: .65rem; }
+
+      /* Charts section — already stacked by 1100px query; just tighten spacing */
+      .charts-grid { gap: .85rem; margin-bottom: 1rem; }
+      .card        { padding: 1rem; }
+      .card-title  { font-size: .88rem; }
+      .card-subtitle { font-size: .67rem; }
+
+      /* ── Bar chart — horizontal scroll ──
+         .bar-scroll-outer becomes the scroll viewport;
+         .bar-wrap keeps a fixed min-width so Chart.js renders
+         at full fidelity instead of being squashed.             */
+      .bar-scroll-outer {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        /* subtle hint that content is scrollable */
+        border-radius: 6px;
+      }
+      .bar-wrap {
+        min-width: 560px;   /* wide enough for 15-niche labels + bars */
+        height: 560px;
+      }
+
+      /* ── Donut legend ── */
+      .d-legend-row { font-size: .75rem; }
+
+      /* ── Headline feed — eliminate horizontal scroll ──
+         Hide the Source and Date columns (cols 5 & 6) so the
+         remaining four columns fit comfortably in ≤768 px.    */
+      .tbl-wrap thead th:nth-child(5),
+      .tbl-wrap thead th:nth-child(6),
+      .tbl-wrap tbody td:nth-child(5),
+      .tbl-wrap tbody td:nth-child(6) {
+        display: none;
+      }
+
+      /* Remove the mini progress bar from score cells
+         (keeps the numeric value; saves ~90 px of column width) */
+      .score-track { display: none; }
+      .score-cell  { min-width: auto; gap: .3rem; }
+      .score-num   { min-width: auto; font-size: .75rem; }
+
+      /* Table typography */
+      table    { font-size: .78rem; }
+      thead th { padding: .55rem .65rem; font-size: .62rem; }
+      tbody td { padding: .55rem .7rem; }
+
+      /* Headline text — allow full wrap, no artificial max-width */
+      .hl-txt { max-width: none; font-size: .78rem; line-height: 1.45; }
+
+      /* Niche tag — allow wrapping on very narrow screens */
+      .niche-tag { white-space: normal; word-break: break-word; font-size: .67rem; }
+
+      /* Controls — stack vertically */
+      .table-controls    { flex-direction: column; gap: .5rem; }
+      .search-box        { min-width: 0; width: 100%; }
+      .sel               { width: 100%; }
+
+      /* Pager — stack info above buttons */
+      .pager {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: .45rem;
+      }
+      .btn { font-size: .75rem; padding: .4rem .9rem; }
+
+      /* Footer */
+      footer { font-size: .68rem; padding: 1rem; margin-top: 1.25rem; }
     }
   </style>
 </head>
@@ -261,7 +350,7 @@
         <div class="card-title">Niche Sentiment Rankings</div>
         <div class="card-subtitle">VADER compound score — range −1.0 (most bearish) → +1.0 (most bullish)</div>
       </div>
-      <div class="bar-wrap"><canvas id="barChart"></canvas></div>
+      <div class="bar-scroll-outer"><div class="bar-wrap"><canvas id="barChart"></canvas></div></div>
     </div>
     <div class="card">
       <div class="card-header">
