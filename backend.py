@@ -73,7 +73,10 @@ def db_execute(query: str, params: tuple = ()) -> int:
     if USE_POSTGRES:
         conn = psycopg2.connect(DATABASE_URL)
         cur  = conn.cursor()
-        cur.execute(query.replace("?", "%s"), params)
+        if params:
+            cur.execute(query.replace("?", "%s"), params)
+        else:
+            cur.execute(query)
         affected = cur.rowcount
         conn.commit()
         cur.close()
@@ -81,7 +84,10 @@ def db_execute(query: str, params: tuple = ()) -> int:
         return affected
     else:
         conn = sqlite3.connect(DB_PATH)
-        cur  = conn.execute(query, params)
+        if params:
+            cur = conn.execute(query, params)
+        else:
+            cur = conn.execute(query)
         conn.commit()
         affected = cur.rowcount
         conn.close()
