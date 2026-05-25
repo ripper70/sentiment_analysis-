@@ -205,7 +205,7 @@ def cleanup_malformed_dates(
         raise HTTPException(status_code=403, detail="Invalid or missing key.")
 
     deleted = db_execute(
-        "DELETE FROM headlines WHERE published NOT LIKE '20%'"
+        "DELETE FROM headlines WHERE published NOT LIKE '20%'", ()
     )
     return {"deleted": deleted}
 
