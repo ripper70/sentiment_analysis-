@@ -34,6 +34,7 @@ RSS_FEEDS = [
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
     "https://feeds.marketwatch.com/marketwatch/topstories/",
     "https://feeds.marketwatch.com/marketwatch/marketpulse/",
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
@@ -46,6 +47,13 @@ RSS_FEEDS = [
     "https://www.investing.com/rss/news.rss",
     "https://fortune.com/feed/",
     "https://axios.com/feeds/feed.rss",
+]
+
+GOSSIP_BLOCKLIST = [
+    "wedding dress", "fashion tips", "recipe", "horoscope", "celebrity gossip",
+    "romance", "dating tips", "divorce", "pottery class", "dance class",
+    "yoga tips", "beauty tips", "makeup", "skincare routine", "best dressed",
+    "outfit ideas",
 ]
 
 
@@ -201,6 +209,10 @@ def main():
 
         # ── quality filters ───────────────────────────────────────────────────
         combined = [a for a in combined if len(a["title"]) >= 25]
+        combined = [
+            a for a in combined
+            if not any(word in a["title"].lower() for word in GOSSIP_BLOCKLIST)
+        ]
 
         # ── deduplicate by normalised title (intra-niche) and by
         #    (title, source) across all niches (inter-niche) ─────────────────
