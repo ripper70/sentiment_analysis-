@@ -973,8 +973,7 @@ async function loadDashboard() {
       .map(hlFromApi)
       .sort((a, b) => (b.published > a.published ? 1 : b.published < a.published ? -1 : 0));
 
-    filtered = [...allHL];
-    renderTable();
+    applyFilters();
 
   } catch (err) {
     console.error('Dashboard load failed:', err);
