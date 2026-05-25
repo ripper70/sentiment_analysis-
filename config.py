@@ -13,7 +13,7 @@ NICHES = {
     "Healthcare & Biotech":  ["healthcare", "biotech", "FDA approval", "pharmaceutical", "drug", "clinical trial"],
     "Semiconductors":        ["semiconductor", "NVIDIA", "Intel", "chip shortage", "microchip", "AMD"],
     "Cybersecurity":         ["cybersecurity", "data breach", "ransomware", "hacking", "cyber attack"],
-    "Electric Vehicles":     ["electric vehicle", "Tesla", "EV sales", "battery", "charging station", "BYD"],
+    "Electric Vehicles":     ["electric vehicle", "Tesla", "EV sales", "EV battery", "charging station", "BYD", "Rivian", "Lucid"],
     "Bitcoin & Crypto":      ["bitcoin", "cryptocurrency", "ethereum", "crypto market", "blockchain", "crypto"],
     "Space Technology":      ["SpaceX", "NASA", "rocket launch", "satellite", "space mission"],
     "AI & Machine Learning": ["artificial intelligence", "ChatGPT", "machine learning", "OpenAI", "claude", "anthropic", "generative AI"],
