@@ -253,10 +253,11 @@
       /* Container */
       .container { padding: .85rem 1rem; }
 
-      /* KPI grid → 2 × 2 */
-      .kpi-grid          { grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; }
-      /* Extra right padding keeps text clear of the absolute-positioned emoji icon */
-      .kpi-card          { padding: .9rem 2.8rem .9rem 1rem; }
+      /* KPI grid → 2 × 2, edge-to-edge (bleeds out of the 1rem container padding) */
+      .kpi-grid          { grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; margin-left: -1rem; margin-right: -1rem; }
+      /* Extra right padding keeps text clear of the absolute-positioned emoji icon; flush corners at screen edge */
+      .kpi-card          { padding: .9rem 2.8rem .9rem 1rem; border-radius: 0; }
+      .kpi-card::after   { border-radius: 0; }
       .kpi-label         { font-size: .62rem; }
       .kpi-value         { font-size: 1.45rem; }
       .kpi-sub           { font-size: .67rem; }
@@ -279,7 +280,7 @@
         border-radius: 6px;
       }
       .bar-wrap {
-        min-width: 560px;   /* wide enough for 15-niche labels + bars */
+        min-width: 700px;   /* wide enough for long niche labels ("Travel & Tourism" etc) + bars */
         height: 560px;
       }
 
@@ -338,6 +339,13 @@
 
       /* Headline text — allow full wrap, no artificial max-width */
       .hl-txt { max-width: none; font-size: .78rem; line-height: 1.45; }
+
+      /* Headline feed card — edge-to-edge (bleeds out of the 1rem container padding) */
+      .container > .card {
+        margin-left: -1rem;
+        margin-right: -1rem;
+        border-radius: 0;
+      }
 
       /* Controls — stack vertically */
       .table-controls    { flex-direction: column; gap: .5rem; }
