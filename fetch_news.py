@@ -112,6 +112,8 @@ def fetch_guardian(niche: str, keywords: list[str]) -> list[dict]:
                     "show-fields": "headline",
                     "page-size":   20,
                     "order-by":    "newest",
+                    "section":     "business,money,technology,environment,politics,science,world",
+                    "lang":        "en",
                 },
                 timeout=10,
             )
@@ -154,6 +156,14 @@ def main():
 
         combined = news_articles + guardian_articles
 
+        # ── quality filters ───────────────────────────────────────────────────
+        kw_lower = [kw.lower() for kw in keywords]
+        combined = [
+            a for a in combined
+            if len(a["title"]) >= 25
+            and any(kw in a["title"].lower() for kw in kw_lower)
+        ]
+
         # ── deduplicate by normalised title ───────────────────────────────────
         seen:   set[str]   = set()
         unique: list[dict] = []
@@ -179,11 +189,18 @@ def main():
         niche_counts[niche] = len(unique)
         news_n     = len(news_articles)
         guardian_n = len(guardian_articles)
-        deduped    = news_n + guardian_n - len(unique)
+        raw_total  = news_n + guardian_n
+        filtered   = raw_total - len(combined)
+        deduped    = len(combined) - len(unique)
+        note_parts = []
+        if filtered:
+            note_parts.append(f"{filtered} filtered")
+        if deduped:
+            note_parts.append(f"{deduped} dupes removed")
+        note = (", " + ", ".join(note_parts)) if note_parts else ""
         print(
             f"  ✓  {niche:<25s} — {len(unique):3d} headlines "
-            f"(NewsAPI: {news_n}, Guardian: {guardian_n}"
-            + (f", {deduped} dupes removed)" if deduped else ")")
+            f"(NewsAPI: {news_n}, Guardian: {guardian_n}{note})"
         )
 
     # ── bulk insert ───────────────────────────────────────────────────────────
