@@ -1,5 +1,6 @@
 vaderSentiment
 requests
+feedparser
 schedule
 newsapi-python
 fastapi

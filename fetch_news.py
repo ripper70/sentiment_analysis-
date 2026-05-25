@@ -1,6 +1,6 @@
 """
 fetch_news.py
-Pull headlines from NewsAPI + The Guardian, score with VADER, store in DB.
+Pull headlines from NewsAPI + Reuters/AP RSS feeds, score with VADER, store in DB.
 Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite.
 Run:  python3 fetch_news.py
 """
@@ -10,11 +10,12 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
+import feedparser
 import requests
 from newsapi import NewsApiClient
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import GUARDIAN_API_KEY, NEWS_API_KEY, NICHES
+from config import NEWS_API_KEY, NICHES
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -27,7 +28,16 @@ if USE_POSTGRES:
 api      = NewsApiClient(api_key=NEWS_API_KEY)
 analyzer = SentimentIntensityAnalyzer()
 
-GUARDIAN_URL = "https://content.guardianapis.com/search"
+RSS_FEEDS = [
+    "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+    "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
+    "https://feeds.marketwatch.com/marketwatch/topstories/",
+    "https://feeds.marketwatch.com/marketwatch/marketpulse/",
+    "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "https://www.cnbc.com/id/10001147/device/rss/rss.html",
+    "https://feeds.bloomberg.com/markets/news.rss",
+]
 
 
 # ── database setup ─────────────────────────────────────────────────────────────
@@ -99,42 +109,35 @@ def fetch_newsapi(niche: str, keywords: list[str]) -> list[dict]:
     return articles
 
 
-def fetch_guardian(niche: str, keywords: list[str]) -> list[dict]:
-    """Return raw article dicts from The Guardian for every keyword in a niche."""
-    articles = []
-    for keyword in keywords:
+def fetch_all_rss() -> list[dict]:
+    """Fetch every RSS feed and return a flat pool of article dicts."""
+    pool = []
+    for url in RSS_FEEDS:
         try:
-            resp = requests.get(
-                GUARDIAN_URL,
-                params={
-                    "api-key":     GUARDIAN_API_KEY,
-                    "q":           keyword,
-                    "show-fields": "headline",
-                    "page-size":   20,
-                    "order-by":    "newest",
-                    "section":     "business,money,technology,environment,politics,science,world",
-                    "lang":        "en",
-                },
-                timeout=10,
-            )
-            resp.raise_for_status()
-            results = resp.json().get("response", {}).get("results", [])
-            for r in results:
-                # Prefer the richer headline field; fall back to webTitle
-                fields = r.get("fields") or {}
-                title  = (fields.get("headline") or r.get("webTitle") or "").strip()
+            feed   = feedparser.parse(url)
+            source = feed.feed.get("title", url) if feed.feed else url
+            for entry in feed.entries:
+                title = (entry.get("title") or "").strip()
                 if not title:
                     continue
-                articles.append({
+                pool.append({
                     "title":     title,
-                    "source":    "The Guardian",
-                    "url":       r.get("webUrl", ""),
-                    "published": r.get("webPublicationDate", ""),
+                    "source":    source,
+                    "url":       entry.get("link", ""),
+                    "published": entry.get("published", ""),
                 })
-            time.sleep(0.25)
         except Exception as e:
-            print(f"    [!] Guardian — {niche} / '{keyword}': {e}")
-    return articles
+            print(f"    [!] RSS — {url}: {e}")
+    return pool
+
+
+def fetch_rss(niche: str, keywords: list[str], pool: list[dict]) -> list[dict]:
+    """Filter the pre-fetched RSS pool for articles matching any niche keyword."""
+    lower_kws = [kw.lower() for kw in keywords]
+    return [
+        a for a in pool
+        if any(kw in a["title"].lower() for kw in lower_kws)
+    ]
 
 
 # ── main ───────────────────────────────────────────────────────────────────────
@@ -147,22 +150,22 @@ def main():
     rows: list[tuple]           = []
     niche_counts: dict[str, int] = {}
 
-    print(f"Fetching from NewsAPI + The Guardian for {len(NICHES)} niches…\n")
+    print(f"Fetching from NewsAPI + RSS feeds for {len(NICHES)} niches…\n")
+
+    # ── fetch all RSS articles once into a shared pool ────────────────────────
+    print("  Pulling RSS feeds…")
+    rss_pool = fetch_all_rss()
+    print(f"  RSS pool: {len(rss_pool)} total articles from {len(RSS_FEEDS)} feeds\n")
 
     for niche, keywords in NICHES.items():
         # ── pull from both sources ────────────────────────────────────────────
-        news_articles     = fetch_newsapi(niche, keywords)
-        guardian_articles = fetch_guardian(niche, keywords)
+        news_articles = fetch_newsapi(niche, keywords)
+        rss_articles  = fetch_rss(niche, keywords, rss_pool)
 
-        combined = news_articles + guardian_articles
+        combined = news_articles + rss_articles
 
         # ── quality filters ───────────────────────────────────────────────────
-        kw_lower = [kw.lower() for kw in keywords]
-        combined = [
-            a for a in combined
-            if len(a["title"]) >= 25
-            and any(kw in a["title"].lower() for kw in kw_lower)
-        ]
+        combined = [a for a in combined if len(a["title"]) >= 25]
 
         # ── deduplicate by normalised title ───────────────────────────────────
         seen:   set[str]   = set()
@@ -187,11 +190,11 @@ def main():
             ))
 
         niche_counts[niche] = len(unique)
-        news_n     = len(news_articles)
-        guardian_n = len(guardian_articles)
-        raw_total  = news_n + guardian_n
-        filtered   = raw_total - len(combined)
-        deduped    = len(combined) - len(unique)
+        news_n  = len(news_articles)
+        rss_n   = len(rss_articles)
+        raw_total = news_n + rss_n
+        filtered  = raw_total - len(combined)
+        deduped   = len(combined) - len(unique)
         note_parts = []
         if filtered:
             note_parts.append(f"{filtered} filtered")
@@ -200,7 +203,7 @@ def main():
         note = (", " + ", ".join(note_parts)) if note_parts else ""
         print(
             f"  ✓  {niche:<25s} — {len(unique):3d} headlines "
-            f"(NewsAPI: {news_n}, Guardian: {guardian_n}{note})"
+            f"(NewsAPI: {news_n}, RSS: {rss_n}{note})"
         )
 
     # ── bulk insert ───────────────────────────────────────────────────────────
