@@ -1,6 +1,6 @@
 """
 scheduler.py
-Auto-refreshes sentiment data every 6 hours.
+Auto-refreshes sentiment data every 4 hours.
 Run:  python3 scheduler.py
 Requires: pip install schedule
 """
@@ -14,8 +14,8 @@ def run_fetch():
     if result.returncode != 0:
         print("Error:", result.stderr[:200])
 
-schedule.every(1).hours.do(run_fetch)
-print("Scheduler running — fetching every 6 hours. Press Ctrl+C to stop.")
+schedule.every(4).hours.do(run_fetch)
+print("Scheduler running — fetching every 4 hours. Press Ctrl+C to stop.")
 run_fetch()  # run immediately on start
 while True:
     schedule.run_pending()
