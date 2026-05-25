@@ -189,6 +189,10 @@
     .niche-label-mobile {
       display: none;
     }
+    /* Source + date injected below headline text — desktop: hidden */
+    .hl-meta-mobile {
+      display: none;
+    }
     .sent-badge {
       display: inline-block; border-radius: 6px; padding: .18rem .5rem;
       font-size: .68rem; font-weight: 700;
@@ -251,7 +255,8 @@
 
       /* KPI grid → 2 × 2 */
       .kpi-grid          { grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; }
-      .kpi-card          { padding: .9rem 1rem; }
+      /* Extra right padding keeps text clear of the absolute-positioned emoji icon */
+      .kpi-card          { padding: .9rem 2.8rem .9rem 1rem; }
       .kpi-label         { font-size: .62rem; }
       .kpi-value         { font-size: 1.45rem; }
       .kpi-sub           { font-size: .67rem; }
@@ -309,6 +314,15 @@
         color: var(--accent);
         white-space: nowrap;
         margin-bottom: .3rem;
+      }
+
+      /* Source + date — shown below headline text on mobile */
+      .hl-meta-mobile {
+        display: block;
+        margin-top: .28rem;
+        font-size: .66rem;
+        color: var(--text-secondary);
+        line-height: 1.3;
       }
 
       /* Remove the mini progress bar from score cells
@@ -790,6 +804,7 @@ function renderTable(){
       <td>
         <span class="niche-label-mobile">${h.icon} ${h.niche}</span>
         <div class="hl-txt">${h.t}</div>
+        <div class="hl-meta-mobile">${h.src} · ${h.d}, 2026</div>
       </td>
       <td>
         <div class="score-cell">
