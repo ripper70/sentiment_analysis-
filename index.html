@@ -253,8 +253,8 @@
       /* Container */
       .container { padding: .85rem 1rem; }
 
-      /* KPI grid → 2 × 2, edge-to-edge (bleeds out of the 1rem container padding) */
-      .kpi-grid          { grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; margin-left: -1rem; margin-right: -1rem; }
+      /* KPI grid → 2 × 2, edge-to-edge (100vw + negative margin centres it on the viewport) */
+      .kpi-grid          { grid-template-columns: repeat(2, 1fr); gap: .75rem; margin-bottom: 1rem; width: 100vw; margin-left: calc(-50vw + 50%); }
       /* Extra right padding keeps text clear of the absolute-positioned emoji icon; flush corners at screen edge */
       .kpi-card          { padding: .9rem 2.8rem .9rem 1rem; border-radius: 0; }
       .kpi-card::after   { border-radius: 0; }
@@ -708,6 +708,7 @@ document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US
           ticks:{color:'#707070',font:{size:10.5}},
         },
         y:{
+          afterFit(scale){ scale.width = Math.max(scale.width, 140); },
           grid:{display:false},
           ticks:{color:'#e0e0e0',font:{size:11.5}, padding:4},
         }
