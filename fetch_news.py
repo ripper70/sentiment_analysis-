@@ -33,7 +33,8 @@ analyzer = SentimentIntensityAnalyzer()   # VADER — used as fallback only
 
 # ── FinBERT config ─────────────────────────────────────────────────────────────
 FINBERT_API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
-FINBERT_HEADERS = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+hf_key = os.environ.get("HUGGINGFACE_API_KEY", HUGGINGFACE_API_KEY)
+FINBERT_HEADERS = {"Authorization": f"Bearer {hf_key}"}
 
 RSS_FEEDS = [
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
