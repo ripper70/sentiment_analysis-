@@ -475,21 +475,21 @@ const API_URL = 'https://worker-production-be23.up.railway.app';
 //  NICHE ICONS  (maps DB niche names → display emoji)
 // ══════════════════════════════════════════════════════════
 const NICHE_ICONS = {
-  'Bitcoin/Crypto':     '₿',
-  'Stock Market':       '📈',
-  'Personal Finance':   '💰',
-  'Electric Vehicles':  '⚡',
-  'Solar/Home Energy':  '☀️',
-  'Meal Kit Delivery':  '🍽️',
-  'Supplements':        '💊',
-  'AI Tools':           '🤖',
-  'Smartphones':        '📱',
-  'Streaming Services': '🎬',
-  'Remote Work':        '🏡',
-  'Travel/Airlines':    '✈️',
-  'Fitness':            '💪',
-  'Real Estate':        '🏠',
-  'Rent/Apartments':    '🏢',
+  'Energy & Oil':          '🛢️',
+  'Real Estate':           '🏠',
+  'Banking & Finance':     '🏦',
+  'Food & Agriculture':    '🌾',
+  'Retail & E-Commerce':   '🛒',
+  'Social Media & AdTech': '📲',
+  'Travel & Tourism':      '✈️',
+  'Gaming & Esports':      '🎮',
+  'Healthcare & Biotech':  '🧬',
+  'Semiconductors':        '🔬',
+  'Cybersecurity':         '🔒',
+  'Electric Vehicles':     '⚡',
+  'Bitcoin & Crypto':      '₿',
+  'Space Technology':      '🚀',
+  'AI & Machine Learning': '🤖',
 };
 
 // ══════════════════════════════════════════════════════════
@@ -516,12 +516,15 @@ function formatDate(isoStr) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  TIMESTAMPS
+//  TIMESTAMPS  (updated on every refresh cycle)
 // ══════════════════════════════════════════════════════════
-const now  = new Date();
-const dStr = now.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
-document.getElementById('ts-top').textContent    = dStr;
-document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+function updateTimestamps() {
+  const now  = new Date();
+  const dStr = now.toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+  document.getElementById('ts-top').textContent    = dStr;
+  document.getElementById('ts-footer').textContent = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+}
+updateTimestamps();
 
 // ══════════════════════════════════════════════════════════
 //  CHART INSTANCES  (held so we can destroy before redraw)
@@ -847,6 +850,12 @@ async function loadDashboard() {
 
 // ── boot ──────────────────────────────────────────────────
 loadDashboard();
+
+// ── auto-refresh every 15 minutes ─────────────────────────
+setInterval(() => {
+  updateTimestamps();
+  loadDashboard();
+}, 900000);
 </script>
 </body>
 </html>
