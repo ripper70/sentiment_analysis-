@@ -156,6 +156,9 @@ def _get_finbert():
 def score_finbert(text: str) -> dict:
     """Score a headline with local FinBERT; falls back to VADER on error.
 
+    Prepends an investor-framing prefix so FinBERT interprets ambiguous text
+    through an economic/market lens rather than a generic financial-tone lens.
+
     Returns a dict with keys: compound, pos, neg, neu — same shape as VADER.
 
     Label mapping:
@@ -165,7 +168,8 @@ def score_finbert(text: str) -> dict:
     """
     try:
         finbert = _get_finbert()
-        result  = finbert(text)[0]
+        framed  = "How does this news impact consumer investments and financial markets? " + text
+        result  = finbert(framed)[0]
         label   = result["label"].lower()
         s       = result["score"]
         if label == "positive":
@@ -204,8 +208,9 @@ def classify_niche(text: str) -> str:
         snippet = (text or "")[:512].strip()
         if not snippet:
             return "Politics & Economy"
+        framed_snippet = "Classify this news article into the most relevant financial and economic category: " + snippet
         classifier = _get_classifier()
-        result     = classifier(snippet, NICHE_LABELS)
+        result     = classifier(framed_snippet, NICHE_LABELS)
         return result["labels"][0]          # highest-scoring label
     except Exception as e:
         print(f"    [!] Classifier error — defaulting to Politics & Economy: {e}")
