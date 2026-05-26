@@ -1,8 +1,10 @@
 """
 fetch_news.py
 Pull headlines from NewsAPI + Reuters/AP RSS feeds, classify each article
-into one of 16 niches using facebook/bart-large-mnli (zero-shot NLI), score
-sentiment with local FinBERT (ProsusAI/finbert via transformers), store in DB.
+into one of 16 niches using a hybrid approach:
+  1. High-confidence keyword matching (no model needed — instant).
+  2. facebook/bart-large-mnli zero-shot NLI fallback when no keyword matches.
+Scores sentiment with local FinBERT (ProsusAI/finbert via transformers).
 Falls back to VADER on FinBERT error; falls back to "Politics & Economy" on
 classifier error.
 Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite.
@@ -80,6 +82,95 @@ NICHE_LABEL_MAP: dict[str, str] = {
     "space exploration, SpaceX, NASA, rockets, satellites": "Space Technology",
     "artificial intelligence, machine learning, AI, ChatGPT, OpenAI": "AI & Machine Learning",
     "politics, government policy, Congress, White House, elections, geopolitics": "Politics & Economy",
+}
+
+# ── high-confidence keyword signals for instant niche assignment ───────────────
+# If ANY keyword phrase appears in (title + first 200 chars of article text),
+# that niche wins immediately — the AI classifier is never called.
+NICHE_KEYWORDS: dict[str, list[str]] = {
+    "Energy & Oil": [
+        "crude oil", "OPEC", "oil price", "Brent", "WTI", "petroleum",
+        "natural gas price", "oil barrel", "Strait of Hormuz", "oil production",
+        "gasoline price", "LNG", "oil refin",
+    ],
+    "Real Estate": [
+        "housing market", "home price", "mortgage rate", "real estate",
+        "home sale", "commercial real estate", "housing start", "rent price",
+        "foreclosure", "home builder", "housing affordab",
+    ],
+    "Banking & Finance": [
+        "Federal Reserve", "interest rate", "S&P 500", "Dow Jones", "Nasdaq",
+        "bond yield", "JPMorgan", "Goldman Sachs", "Fed rate", "treasury yield",
+        "stock market", "inflation rate", "bank earn",
+    ],
+    "Food & Agriculture": [
+        "food price", "agriculture", "grocery", "farming", "wheat price",
+        "corn future", "crop yield", "food supply", "USDA", "food inflation",
+        "livestock", "soybean", "fertilizer",
+    ],
+    "Retail & E-Commerce": [
+        "retail sale", "Amazon earn", "consumer spending", "e-commerce",
+        "Walmart earn", "Target earn", "consumer confidence", "holiday sale",
+        "online shopping", "supply chain retail",
+    ],
+    "Social Media & AdTech": [
+        "Meta earn", "TikTok", "Instagram", "digital advertising",
+        "Facebook stock", "ad spending", "Snapchat", "YouTube revenue",
+        "social media stock", "ad revenue",
+    ],
+    "Travel & Tourism": [
+        "airline earn", "airfare", "Delta Air", "United Airlines",
+        "American Airlines", "hotel occupancy", "tourism spending",
+        "cruise industry", "airport traffic", "flight price",
+    ],
+    "Gaming & Esports": [
+        "video game sale", "Nintendo", "PlayStation", "Xbox", "gaming revenue",
+        "esports", "Steam sale", "gaming stock", "mobile gaming", "Activision",
+        "Electronic Arts", "Roblox",
+    ],
+    "Healthcare & Biotech": [
+        "FDA approval", "FDA approved", "biotech stock", "pharmaceutical earn",
+        "clinical trial", "Medicare fund", "Medicaid", "drug approval",
+        "vaccine", "Pfizer", "Moderna", "UnitedHealth", "Eli Lilly",
+        "hospital stock",
+    ],
+    "Semiconductors": [
+        "semiconductor", "NVIDIA earn", "Intel earn", "chip shortage", "TSMC",
+        "Qualcomm", "AMD earn", "microchip", "chip export", "chip stock",
+        "wafer", "Micron", "Broadcom",
+    ],
+    "Cybersecurity": [
+        "data breach", "ransomware", "cybersecurity", "hacking", "cyber attack",
+        "malware", "phishing", "CrowdStrike", "Palo Alto", "cyber threat",
+        "zero-day",
+    ],
+    "Electric Vehicles": [
+        "electric vehicle", "Tesla earn", "EV sale", "EV battery",
+        "charging station", "BYD", "Rivian", "Lucid Motors", "EV market",
+        "electric car", "EV stock",
+    ],
+    "Bitcoin & Crypto": [
+        "bitcoin price", "cryptocurrency", "ethereum price", "crypto market",
+        "blockchain", "Coinbase", "crypto exchange", "digital asset",
+        "crypto regulation", "bitcoin ETF", "DeFi", "stablecoin",
+    ],
+    "Space Technology": [
+        "SpaceX", "NASA", "rocket launch", "satellite deploy", "Starship",
+        "Blue Origin", "space economy", "space stock", "orbital launch",
+        "space exploration",
+    ],
+    "AI & Machine Learning": [
+        "artificial intelligence earn", "ChatGPT", "OpenAI", "Anthropic",
+        "generative AI", "machine learning stock", "LLM", "AI regulation",
+        "NVIDIA AI", "AI investment", "AI chip", "foundation model",
+    ],
+    "Politics & Economy": [
+        "Congress vote", "Senate bill", "White House policy", "President Trump",
+        "tariff", "trade war", "GDP", "recession", "federal deficit",
+        "government shutdown", "debt ceiling", "federal budget",
+        "economic sanction", "geopolitical", "election result",
+        "executive order", "Treasury Secretary",
+    ],
 }
 
 # ── broad financial keywords for NewsAPI sweep ─────────────────────────────────
@@ -219,27 +310,47 @@ def _get_classifier():
     return _classifier_pipeline
 
 
-def classify_niche(text: str) -> str:
-    """Classify article text into one of the 16 canonical niches.
+def classify_niche(title: str, article_text: str) -> tuple[str, str]:
+    """Classify an article into one of the 16 canonical niches using a hybrid approach.
 
-    Uses the first 512 characters of *text* as input to the zero-shot
-    facebook/bart-large-mnli model with descriptive keyword labels for
-    richer NLI signal.  The winning keyword label is mapped back to its
-    human-readable niche name via NICHE_LABEL_MAP.  Falls back to
-    'Politics & Economy' if the classifier raises an exception or *text*
-    is empty.
+    Strategy
+    --------
+    1. **Keyword pass** — scan *(title + first 200 chars of article_text)* against
+       NICHE_KEYWORDS.  The comparison is case-insensitive.  The first niche whose
+       any keyword phrase appears in the combined text wins immediately; the AI
+       model is never loaded.  Returns ``(niche, "[keyword]")``.
+
+    2. **AI fallback** — if no keyword matches, feed the first 512 characters of
+       *article_text* (or *title* when article_text is empty) to the zero-shot
+       facebook/bart-large-mnli classifier with descriptive NICHE_LABELS for richer
+       NLI signal.  The winning label is mapped back via NICHE_LABEL_MAP.  Returns
+       ``(niche, "[AI]")``.
+
+    Falls back to ``("Politics & Economy", "[AI]")`` on any classifier exception or
+    empty input.
     """
+    # ── Step 1: fast keyword matching ──────────────────────────────────────────
+    search_text = (title + " " + (article_text or "")[:200]).lower()
+    for niche, keywords in NICHE_KEYWORDS.items():
+        for kw in keywords:
+            if kw.lower() in search_text:
+                return niche, "[keyword]"
+
+    # ── Step 2: zero-shot AI fallback ──────────────────────────────────────────
     try:
-        snippet = (text or "")[:512].strip()
+        snippet = (article_text or title or "")[:512].strip()
         if not snippet:
-            return "Politics & Economy"
-        framed_snippet = "Classify this news article into the most relevant financial and economic category: " + snippet
+            return "Politics & Economy", "[AI]"
+        framed_snippet = (
+            "Classify this news article into the most relevant financial and "
+            "economic category: " + snippet
+        )
         classifier = _get_classifier()
         result     = classifier(framed_snippet, NICHE_LABELS)
-        return NICHE_LABEL_MAP[result["labels"][0]]   # map keyword label → niche name
+        return NICHE_LABEL_MAP[result["labels"][0]], "[AI]"   # map label → niche name
     except Exception as e:
         print(f"    [!] Classifier error — defaulting to Politics & Economy: {e}")
-        return "Politics & Economy"
+        return "Politics & Economy", "[AI]"
 
 
 # ── article text fetcher ──────────────────────────────────────────────────────
@@ -392,9 +503,10 @@ def main():
     rows: list[tuple] = []
 
     for i, a in enumerate(new_articles, 1):
-        text  = fetch_article_text(a["url"]) or a["title"]
-        niche = classify_niche(text)
-        sc    = score_finbert(text)
+        article_text   = fetch_article_text(a["url"]) or ""
+        text           = article_text or a["title"]   # full content or title for FinBERT
+        niche, method  = classify_niche(a["title"], article_text)
+        sc             = score_finbert(text)
 
         niche_counts[niche] = niche_counts.get(niche, 0) + 1
 
@@ -410,7 +522,7 @@ def main():
 
         title_preview = a["title"][:70] + "…" if len(a["title"]) > 70 else a["title"]
         print(f"  [{i:3d}/{len(new_articles)}] {title_preview}")
-        print(f"           → {niche}")
+        print(f"           → {niche}  {method}")
 
         time.sleep(0.05)
 
