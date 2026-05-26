@@ -1,0 +1,26 @@
+name: Rescore FinBERT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rescore-finbert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run rescore_finbert.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
+        run: python3 rescore_finbert.py
