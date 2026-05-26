@@ -1,7 +1,10 @@
 """
 fetch_news.py
-Pull headlines from NewsAPI + Reuters/AP RSS feeds, score with local FinBERT
-(ProsusAI/finbert via transformers), store in DB.  Falls back to VADER on error.
+Pull headlines from NewsAPI + Reuters/AP RSS feeds, classify each article
+into one of 16 niches using facebook/bart-large-mnli (zero-shot NLI), score
+sentiment with local FinBERT (ProsusAI/finbert via transformers), store in DB.
+Falls back to VADER on FinBERT error; falls back to "Politics & Economy" on
+classifier error.
 Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite.
 Run:  python3 fetch_news.py
 """
@@ -20,7 +23,7 @@ from newsapi import NewsApiClient
 from transformers import pipeline
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import NEWS_API_KEY, NICHES
+from config import NEWS_API_KEY
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -33,8 +36,35 @@ if USE_POSTGRES:
 api      = NewsApiClient(api_key=NEWS_API_KEY)
 analyzer = SentimentIntensityAnalyzer()   # VADER — used as fallback only
 
-# ── FinBERT local model (lazy-loaded on first call) ────────────────────────────
-_finbert_pipeline = None
+# ── lazy-loaded model handles ──────────────────────────────────────────────────
+_finbert_pipeline    = None   # ProsusAI/finbert  (sentiment scoring)
+_classifier_pipeline = None   # facebook/bart-large-mnli  (niche classification)
+
+# ── canonical niche labels ─────────────────────────────────────────────────────
+NICHE_LABELS: list[str] = [
+    "Energy & Oil",
+    "Real Estate",
+    "Banking & Finance",
+    "Food & Agriculture",
+    "Retail & E-Commerce",
+    "Social Media & AdTech",
+    "Travel & Tourism",
+    "Gaming & Esports",
+    "Healthcare & Biotech",
+    "Semiconductors",
+    "Cybersecurity",
+    "Electric Vehicles",
+    "Bitcoin & Crypto",
+    "Space Technology",
+    "AI & Machine Learning",
+    "Politics & Economy",
+]
+
+# ── broad financial keywords for NewsAPI sweep ─────────────────────────────────
+BROAD_KEYWORDS: list[str] = [
+    "market", "economy", "stocks", "finance", "technology",
+    "earnings", "trade", "inflation", "Fed", "GDP",
+]
 
 RSS_FEEDS = [
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
@@ -74,7 +104,6 @@ def get_conn():
 
 def init_db(conn):
     """Create the headlines table and indexes if they don't exist."""
-    # id column syntax differs between PostgreSQL and SQLite
     id_col = "SERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
     cur = conn.cursor()
     cur.execute(f"""
@@ -103,13 +132,10 @@ def normalize_date(raw: str) -> str | None:
     """Parse an RSS/NewsAPI date string and return an ISO-8601 string, or None."""
     if not raw:
         return None
-    # Primary: RFC 2822 format used by most RSS feeds
-    # e.g. "Wed, 20 May 2026 21:56:06 +0000"
     try:
         return email.utils.parsedate_to_datetime(raw).isoformat()
     except Exception:
         pass
-    # Fallback: dateutil handles ISO 8601, NewsAPI timestamps, and other variants
     try:
         return dateutil.parser.parse(raw).isoformat()
     except Exception:
@@ -117,7 +143,7 @@ def normalize_date(raw: str) -> str | None:
     return None
 
 
-# ── scoring ────────────────────────────────────────────────────────────────────
+# ── FinBERT sentiment scoring ──────────────────────────────────────────────────
 
 def _get_finbert():
     """Return the FinBERT pipeline, loading it on the first call."""
@@ -130,8 +156,7 @@ def _get_finbert():
 def score_finbert(text: str) -> dict:
     """Score a headline with local FinBERT; falls back to VADER on error.
 
-    Returns a dict with keys: compound, pos, neg, neu — same shape as VADER so
-    the rest of the pipeline needs no changes.
+    Returns a dict with keys: compound, pos, neg, neu — same shape as VADER.
 
     Label mapping:
       positive → compound= score, pos=score, neg=0,     neu=0
@@ -154,10 +179,43 @@ def score_finbert(text: str) -> dict:
         return analyzer.polarity_scores(text)
 
 
+# ── zero-shot niche classifier ─────────────────────────────────────────────────
+
+def _get_classifier():
+    """Return the zero-shot classification pipeline, loading it on first call."""
+    global _classifier_pipeline
+    if _classifier_pipeline is None:
+        print("  [classifier] Loading facebook/bart-large-mnli (first run only)…")
+        _classifier_pipeline = pipeline(
+            "zero-shot-classification",
+            model="facebook/bart-large-mnli",
+        )
+    return _classifier_pipeline
+
+
+def classify_niche(text: str) -> str:
+    """Classify article text into one of the 16 canonical niches.
+
+    Uses the first 512 characters of *text* as input to the zero-shot
+    facebook/bart-large-mnli model.  Falls back to 'Politics & Economy'
+    if the classifier raises an exception or *text* is empty.
+    """
+    try:
+        snippet = (text or "")[:512].strip()
+        if not snippet:
+            return "Politics & Economy"
+        classifier = _get_classifier()
+        result     = classifier(snippet, NICHE_LABELS)
+        return result["labels"][0]          # highest-scoring label
+    except Exception as e:
+        print(f"    [!] Classifier error — defaulting to Politics & Economy: {e}")
+        return "Politics & Economy"
+
+
 # ── article text fetcher ──────────────────────────────────────────────────────
 
 def fetch_article_text(url: str) -> str | None:
-    """Fetch full article body text for richer sentiment scoring.
+    """Fetch full article body text for richer sentiment/classification scoring.
 
     Makes a browser-like GET request, extracts all <p> tag text via
     BeautifulSoup, and returns the first 512 characters (FinBERT's practical
@@ -188,8 +246,11 @@ def fetch_article_text(url: str) -> str | None:
 
 # ── fetchers ───────────────────────────────────────────────────────────────────
 
-def fetch_newsapi(niche: str, keywords: list[str]) -> list[dict]:
-    """Return raw article dicts from NewsAPI for every keyword in a niche."""
+def fetch_newsapi(label: str, keywords: list[str]) -> list[dict]:
+    """Return raw article dicts from NewsAPI for every keyword in *keywords*.
+
+    *label* is used only for error-message context (e.g. 'broad financial').
+    """
     articles = []
     for keyword in keywords:
         try:
@@ -211,7 +272,7 @@ def fetch_newsapi(niche: str, keywords: list[str]) -> list[dict]:
                 })
             time.sleep(0.25)   # stay within rate limit
         except Exception as e:
-            print(f"    [!] NewsAPI — {niche} / '{keyword}': {e}")
+            print(f"    [!] NewsAPI — {label} / '{keyword}': {e}")
     return articles
 
 
@@ -237,15 +298,6 @@ def fetch_all_rss() -> list[dict]:
     return pool
 
 
-def fetch_rss(niche: str, keywords: list[str], pool: list[dict]) -> list[dict]:
-    """Filter the pre-fetched RSS pool for articles matching any niche keyword."""
-    lower_kws = [kw.lower() for kw in keywords]
-    return [
-        a for a in pool
-        if any(kw in a["title"].lower() for kw in lower_kws)
-    ]
-
-
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -253,82 +305,59 @@ def main():
     init_db(conn)
     fetched_at = datetime.now(timezone.utc).isoformat()
 
-    # all_articles collects unique articles across niches before scoring
-    all_articles: list[dict]     = []
-    niche_counts: dict[str, int] = {}
+    print("Fetching articles from NewsAPI (broad financial keywords) + RSS feeds…\n")
 
-    print(f"Fetching from NewsAPI + RSS feeds for {len(NICHES)} niches…\n")
-
-    # ── fetch all RSS articles once into a shared pool ────────────────────────
+    # ── 1. Pull all RSS articles into a flat list ─────────────────────────────
     print("  Pulling RSS feeds…")
-    rss_pool = fetch_all_rss()
-    print(f"  RSS pool: {len(rss_pool)} total articles from {len(RSS_FEEDS)} feeds\n")
+    rss_articles = fetch_all_rss()
+    print(f"  RSS pool: {len(rss_articles)} articles from {len(RSS_FEEDS)} feeds\n")
 
-    # ── global dedup: same article must not appear in more than one niche ─────
-    # Keyed by (normalised_title, source) so the same story from two outlets is
-    # allowed, but a single article matched by two different niche keywords is
-    # saved only once (under whichever niche processes it first).
+    # ── 2. Pull NewsAPI with broad financial keywords ─────────────────────────
+    print("  Pulling NewsAPI with broad financial keywords…")
+    news_articles = fetch_newsapi("broad financial", BROAD_KEYWORDS)
+    print(f"  NewsAPI: {len(news_articles)} articles\n")
+
+    # ── 3. Combine, apply quality filters, and deduplicate globally ───────────
+    combined = rss_articles + news_articles
+
+    combined = [a for a in combined if len(a["title"]) >= 25]
+    combined = [
+        a for a in combined
+        if not any(word in a["title"].lower() for word in GOSSIP_BLOCKLIST)
+    ]
+
     seen_global: set[tuple[str, str]] = set()
+    unique: list[dict] = []
+    for a in combined:
+        key        = a["title"].lower()
+        global_key = (key, a["source"])
+        if global_key not in seen_global:
+            seen_global.add(global_key)
+            unique.append(a)
 
-    for niche, keywords in NICHES.items():
-        # ── pull from both sources ────────────────────────────────────────────
-        news_articles = fetch_newsapi(niche, keywords)
-        rss_articles  = fetch_rss(niche, keywords, rss_pool)
+    filtered = len(rss_articles) + len(news_articles) - len(combined)
+    duped    = len(combined) - len(unique)
+    print(
+        f"  Combined: {len(rss_articles) + len(news_articles)} articles  "
+        f"→  {filtered} filtered  →  {duped} dupes removed  "
+        f"→  {len(unique)} unique\n"
+    )
 
-        combined = news_articles + rss_articles
+    # ── 4. Classify niche, score sentiment, collect DB rows ───────────────────
+    print(f"Classifying niches + scoring {len(unique)} articles with FinBERT…\n")
 
-        # ── quality filters ───────────────────────────────────────────────────
-        combined = [a for a in combined if len(a["title"]) >= 25]
-        combined = [
-            a for a in combined
-            if not any(word in a["title"].lower() for word in GOSSIP_BLOCKLIST)
-        ]
+    niche_counts: dict[str, int] = {}
+    rows: list[tuple] = []
 
-        # ── deduplicate by normalised title (intra-niche) and by
-        #    (title, source) across all niches (inter-niche) ─────────────────
-        seen:   set[str]   = set()
-        unique: list[dict] = []
-        for a in combined:
-            key        = a["title"].lower()
-            global_key = (key, a["source"])
-            if key not in seen and global_key not in seen_global:
-                seen.add(key)
-                seen_global.add(global_key)
-                unique.append({**a, "niche": niche})
+    for i, a in enumerate(unique, 1):
+        text  = fetch_article_text(a["url"]) or a["title"]
+        niche = classify_niche(text)
+        sc    = score_finbert(text)
 
-        niche_counts[niche] = len(unique)
-        all_articles.extend(unique)
+        niche_counts[niche] = niche_counts.get(niche, 0) + 1
 
-        news_n    = len(news_articles)
-        rss_n     = len(rss_articles)
-        raw_total = news_n + rss_n
-        filtered  = raw_total - len(combined)
-        deduped   = len(combined) - len(unique)
-        note_parts = []
-        if filtered:
-            note_parts.append(f"{filtered} filtered")
-        if deduped:
-            note_parts.append(f"{deduped} dupes removed")
-        note = (", " + ", ".join(note_parts)) if note_parts else ""
-        print(
-            f"  ✓  {niche:<25s} — {len(unique):3d} headlines "
-            f"(NewsAPI: {news_n}, RSS: {rss_n}{note})"
-        )
-
-    # ── score all articles with FinBERT ──────────────────────────────────────
-    # For each article, try to fetch the full body text for a richer score;
-    # fall back to the headline if the fetch fails or returns too little text.
-    total = len(all_articles)
-    rows:  list[tuple] = []
-
-    print(f"\nScoring {total} articles with FinBERT (ProsusAI/finbert)…")
-    print("  (each dot = one article scored)")
-    print("  ", end="", flush=True)
-    for a in all_articles:
-        text = fetch_article_text(a["url"]) or a["title"]
-        sc   = score_finbert(text)
         rows.append((
-            a["niche"],
+            niche,
             a["title"],
             a["source"],
             a["url"],
@@ -336,11 +365,14 @@ def main():
             sc["compound"], sc["pos"], sc["neu"], sc["neg"],
             fetched_at,
         ))
-        print(".", end="", flush=True)
-        time.sleep(0.1)
-    print()  # newline after dot progress line
 
-    # ── bulk insert ───────────────────────────────────────────────────────────
+        title_preview = a["title"][:70] + "…" if len(a["title"]) > 70 else a["title"]
+        print(f"  [{i:3d}/{len(unique)}] {title_preview}")
+        print(f"           → {niche}")
+
+        time.sleep(0.05)
+
+    # ── 5. Bulk insert ─────────────────────────────────────────────────────────
     placeholder = "%s" if USE_POSTGRES else "?"
     insert_sql  = f"""
         INSERT INTO headlines
@@ -353,8 +385,16 @@ def main():
     cur.close()
     conn.close()
 
+    # ── 6. Summary ─────────────────────────────────────────────────────────────
     db_label = DATABASE_URL.split("@")[-1] if USE_POSTGRES else DB_PATH
     print(f"\n✅  Done — {len(rows)} headlines saved to {db_label}")
+    print("\n── Niche breakdown ──────────────────────────────────────────────────")
+    for niche in NICHE_LABELS:
+        count = niche_counts.get(niche, 0)
+        if count:
+            bar = "█" * min(count, 50)
+            print(f"  {niche:<25s} {count:3d}  {bar}")
+    print("─────────────────────────────────────────────────────────────────────")
 
 
 if __name__ == "__main__":
