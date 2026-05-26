@@ -18,7 +18,7 @@ import os
 
 import psycopg2
 
-from fetch_news import fetch_article_text, score_finbert
+from fetch_news import classify_niche, fetch_article_text, score_finbert
 
 # ── connection config ──────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -37,23 +37,24 @@ def get_conn():
 
 
 def fetch_all_headlines(conn):
-    """Return every headline row as a list of (id, title, url) tuples."""
+    """Return every headline row as a list of (id, title, url, niche) tuples."""
     with conn.cursor() as cur:
-        cur.execute("SELECT id, title, url FROM headlines ORDER BY id")
+        cur.execute("SELECT id, title, url, niche FROM headlines ORDER BY id")
         return cur.fetchall()
 
 
 def update_scores(conn, rows: list[tuple]):
-    """Bulk-update sentiment columns for a batch of rows.
+    """Bulk-update sentiment columns and niche for a batch of rows.
 
-    Each element of *rows* must be (compound, pos, neg, neu, id).
+    Each element of *rows* must be (compound, pos, neg, neu, niche, id).
     """
     sql = """
         UPDATE headlines
            SET compound = %s,
                pos      = %s,
                neg      = %s,
-               neu      = %s
+               neu      = %s,
+               niche    = %s
          WHERE id = %s
     """
     with conn.cursor() as cur:
@@ -73,18 +74,27 @@ def main():
     print(f"Found {total} headlines to re-score.\n")
 
     updated   = 0
-    batch_buf = []   # accumulates (compound, pos, neg, neu, id) tuples
+    batch_buf = []   # accumulates (compound, pos, neg, neu, niche, id) tuples
 
-    for i, (row_id, title, url) in enumerate(headlines, start=1):
-        # ── score ──────────────────────────────────────────────────────────────
-        text = None
-        if url:
-            text = fetch_article_text(url)
-        if not text:
-            text = title
+    for i, (row_id, title, url, old_niche) in enumerate(headlines, start=1):
+        # ── fetch article text (used for both scoring and classification) ───────
+        article_text = fetch_article_text(url) if url else None
+        score_text   = article_text or title
 
-        sc = score_finbert(text)
-        batch_buf.append((sc["compound"], sc["pos"], sc["neg"], sc["neu"], row_id))
+        # ── sentiment score ─────────────────────────────────────────────────────
+        sc = score_finbert(score_text)
+
+        # ── niche reclassification ──────────────────────────────────────────────
+        new_niche, method = classify_niche(title, article_text or "")
+
+        batch_buf.append((sc["compound"], sc["pos"], sc["neg"], sc["neu"], new_niche, row_id))
+
+        # ── per-article progress line ───────────────────────────────────────────
+        title_preview = title[:65] + "…" if len(title) > 65 else title
+        niche_changed = old_niche != new_niche
+        arrow = f"{old_niche} → {new_niche}" if niche_changed else f"{old_niche} (unchanged)"
+        print(f"  [{i:4d}/{total}] {title_preview}")
+        print(f"           niche: {arrow}  {method}")
 
         # ── flush batch ────────────────────────────────────────────────────────
         if len(batch_buf) >= BATCH_SIZE:
@@ -92,7 +102,7 @@ def main():
             updated += len(batch_buf)
             batch_buf.clear()
             pct = updated / total * 100
-            print(f"  Progress: {updated}/{total} ({pct:.1f}%) updated")
+            print(f"\n  ── Progress: {updated}/{total} ({pct:.1f}%) updated ──\n")
 
     # ── flush remainder ────────────────────────────────────────────────────────
     if batch_buf:
@@ -101,7 +111,7 @@ def main():
         batch_buf.clear()
 
     conn.close()
-    print(f"\n✅  Done — {updated}/{total} headlines re-scored with FinBERT.")
+    print(f"\n✅  Done — {updated}/{total} headlines re-scored with FinBERT and niches reclassified.")
 
 
 if __name__ == "__main__":
