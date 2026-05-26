@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import dateutil.parser
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 from newsapi import NewsApiClient
 from transformers import pipeline
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -153,6 +154,38 @@ def score_finbert(text: str) -> dict:
         return analyzer.polarity_scores(text)
 
 
+# ── article text fetcher ──────────────────────────────────────────────────────
+
+def fetch_article_text(url: str) -> str | None:
+    """Fetch full article body text for richer sentiment scoring.
+
+    Makes a browser-like GET request, extracts all <p> tag text via
+    BeautifulSoup, and returns the first 512 characters (FinBERT's practical
+    max input length).  Returns None when:
+      - the request fails or times out (5 s limit)
+      - the extracted text is shorter than 100 characters
+      - any other exception occurs
+    Never raises — all errors are swallowed silently.
+    """
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        }
+        resp = requests.get(url, headers=headers, timeout=5)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        text = " ".join(p.get_text() for p in soup.find_all("p")).strip()
+        if len(text) < 100:
+            return None
+        return text[:512]
+    except Exception:
+        return None
+
+
 # ── fetchers ───────────────────────────────────────────────────────────────────
 
 def fetch_newsapi(niche: str, keywords: list[str]) -> list[dict]:
@@ -282,28 +315,30 @@ def main():
             f"(NewsAPI: {news_n}, RSS: {rss_n}{note})"
         )
 
-    # ── score all headlines with FinBERT in batches of 10 ────────────────────
-    BATCH_SIZE = 10
+    # ── score all articles with FinBERT ──────────────────────────────────────
+    # For each article, try to fetch the full body text for a richer score;
+    # fall back to the headline if the fetch fails or returns too little text.
     total = len(all_articles)
     rows:  list[tuple] = []
 
-    print(f"\nScoring {total} headlines with FinBERT (ProsusAI/finbert)…")
-    for i in range(0, total, BATCH_SIZE):
-        batch     = all_articles[i : i + BATCH_SIZE]
-        batch_end = min(i + BATCH_SIZE, total)
-        print(f"  Scoring headlines {i + 1}–{batch_end} of {total}…")
-        for a in batch:
-            sc = score_finbert(a["title"])
-            rows.append((
-                a["niche"],
-                a["title"],
-                a["source"],
-                a["url"],
-                normalize_date(a["published"]),
-                sc["compound"], sc["pos"], sc["neu"], sc["neg"],
-                fetched_at,
-            ))
-            time.sleep(0.1)
+    print(f"\nScoring {total} articles with FinBERT (ProsusAI/finbert)…")
+    print("  (each dot = one article scored)")
+    print("  ", end="", flush=True)
+    for a in all_articles:
+        text = fetch_article_text(a["url"]) or a["title"]
+        sc   = score_finbert(text)
+        rows.append((
+            a["niche"],
+            a["title"],
+            a["source"],
+            a["url"],
+            normalize_date(a["published"]),
+            sc["compound"], sc["pos"], sc["neu"], sc["neg"],
+            fetched_at,
+        ))
+        print(".", end="", flush=True)
+        time.sleep(0.1)
+    print()  # newline after dot progress line
 
     # ── bulk insert ───────────────────────────────────────────────────────────
     placeholder = "%s" if USE_POSTGRES else "?"

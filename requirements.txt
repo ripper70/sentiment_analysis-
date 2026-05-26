@@ -9,5 +9,4 @@ psycopg2-binary
 python-dateutil
 transformers
 torch
-transformers
-torch
+beautifulsoup4
