@@ -10,8 +10,8 @@ Usage:
     python3 rescore_finbert.py
 
 Environment:
-    DATABASE_URL — PostgreSQL connection string (set by Railway automatically).
-                   Falls back to FALLBACK_DATABASE_URL below if not set.
+    DATABASE_URL — PostgreSQL connection string (required; set by Railway
+                   automatically, or export it locally before running).
 """
 
 import os
@@ -21,12 +21,10 @@ import psycopg2
 from fetch_news import fetch_article_text, score_finbert
 
 # ── connection config ──────────────────────────────────────────────────────────
-# Paste your Railway "Public URL" here as a safety fallback.
-FALLBACK_DATABASE_URL = (
-    "postgresql://postgres:VLdBgQlXTPcYcxKeDigPjxLZdmvksOco@ballast.proxy.rlwy.net:51402/railway"
-)
-
-DATABASE_URL = os.environ.get("DATABASE_URL") or FALLBACK_DATABASE_URL
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if not DATABASE_URL:
+    print("ERROR: DATABASE_URL not set")
+    exit(1)
 
 BATCH_SIZE = 50
 

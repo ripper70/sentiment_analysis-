@@ -1,13 +1,15 @@
-NEWS_API_KEY       = "08b3d831bf3c4da7a58936bb55cc0b52"
-GUARDIAN_API_KEY   = "004ae94b-8fdf-4616-93d7-3ba02c1b3206"
-HUGGINGFACE_API_KEY = ""
+import os
 
-# ── Railway environment variables ──────────────────────────────────────────────
-# Set the following secrets in your Railway project's Variables tab:
+# ── API keys — set these in your environment (never hardcode secrets) ──────────
+# Railway: add them in your project's Variables tab.
+# Local:   export them in your shell or use a .env file + python-dotenv.
 #   NEWS_API_KEY        = <your NewsAPI key>
 #   GUARDIAN_API_KEY    = <your Guardian API key>
 #   HUGGINGFACE_API_KEY = <your HuggingFace API key>
 #   DATABASE_URL        = <auto-set by Railway PostgreSQL plugin>
+NEWS_API_KEY        = os.environ.get("NEWS_API_KEY", "")
+GUARDIAN_API_KEY    = os.environ.get("GUARDIAN_API_KEY", "")
+HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
 
 NICHES = {
     "Energy & Oil":          ["oil price", "crude oil", "OPEC", "petroleum", "natural gas", "energy prices", "Strait of Hormuz", "Iran oil"],

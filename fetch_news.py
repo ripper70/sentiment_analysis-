@@ -41,24 +41,46 @@ _finbert_pipeline    = None   # ProsusAI/finbert  (sentiment scoring)
 _classifier_pipeline = None   # facebook/bart-large-mnli  (niche classification)
 
 # ── canonical niche labels ─────────────────────────────────────────────────────
+# Descriptive keyword phrases fed to the zero-shot classifier — richer context
+# gives the NLI model more signal than bare category names.
 NICHE_LABELS: list[str] = [
-    "Energy & Oil",
-    "Real Estate",
-    "Banking & Finance",
-    "Food & Agriculture",
-    "Retail & E-Commerce",
-    "Social Media & AdTech",
-    "Travel & Tourism",
-    "Gaming & Esports",
-    "Healthcare & Biotech",
-    "Semiconductors",
-    "Cybersecurity",
-    "Electric Vehicles",
-    "Bitcoin & Crypto",
-    "Space Technology",
-    "AI & Machine Learning",
-    "Politics & Economy",
+    "oil prices, energy sector, OPEC, petroleum, natural gas",
+    "housing market, real estate, mortgage, home prices, rent",
+    "stock market, banking, Federal Reserve, inflation, Wall Street, bonds",
+    "food prices, agriculture, farming, grocery, crops",
+    "retail shopping, e-commerce, Amazon, consumer spending, Walmart",
+    "social media, digital advertising, TikTok, Meta, Facebook",
+    "airlines, travel, tourism, hotels, airfare",
+    "video games, gaming industry, esports, Nintendo, PlayStation",
+    "healthcare, pharmaceuticals, biotech, FDA, medical, vaccines",
+    "semiconductors, chips, NVIDIA, Intel, TSMC, microchips",
+    "cybersecurity, hacking, data breach, ransomware, cyber attack",
+    "electric vehicles, Tesla, EV, battery, charging",
+    "bitcoin, cryptocurrency, blockchain, ethereum, crypto",
+    "space exploration, SpaceX, NASA, rockets, satellites",
+    "artificial intelligence, machine learning, AI, ChatGPT, OpenAI",
+    "politics, government policy, Congress, White House, elections, geopolitics",
 ]
+
+# Maps each keyword label back to its human-readable canonical niche name.
+NICHE_LABEL_MAP: dict[str, str] = {
+    "oil prices, energy sector, OPEC, petroleum, natural gas": "Energy & Oil",
+    "housing market, real estate, mortgage, home prices, rent": "Real Estate",
+    "stock market, banking, Federal Reserve, inflation, Wall Street, bonds": "Banking & Finance",
+    "food prices, agriculture, farming, grocery, crops": "Food & Agriculture",
+    "retail shopping, e-commerce, Amazon, consumer spending, Walmart": "Retail & E-Commerce",
+    "social media, digital advertising, TikTok, Meta, Facebook": "Social Media & AdTech",
+    "airlines, travel, tourism, hotels, airfare": "Travel & Tourism",
+    "video games, gaming industry, esports, Nintendo, PlayStation": "Gaming & Esports",
+    "healthcare, pharmaceuticals, biotech, FDA, medical, vaccines": "Healthcare & Biotech",
+    "semiconductors, chips, NVIDIA, Intel, TSMC, microchips": "Semiconductors",
+    "cybersecurity, hacking, data breach, ransomware, cyber attack": "Cybersecurity",
+    "electric vehicles, Tesla, EV, battery, charging": "Electric Vehicles",
+    "bitcoin, cryptocurrency, blockchain, ethereum, crypto": "Bitcoin & Crypto",
+    "space exploration, SpaceX, NASA, rockets, satellites": "Space Technology",
+    "artificial intelligence, machine learning, AI, ChatGPT, OpenAI": "AI & Machine Learning",
+    "politics, government policy, Congress, White House, elections, geopolitics": "Politics & Economy",
+}
 
 # ── broad financial keywords for NewsAPI sweep ─────────────────────────────────
 BROAD_KEYWORDS: list[str] = [
@@ -201,8 +223,11 @@ def classify_niche(text: str) -> str:
     """Classify article text into one of the 16 canonical niches.
 
     Uses the first 512 characters of *text* as input to the zero-shot
-    facebook/bart-large-mnli model.  Falls back to 'Politics & Economy'
-    if the classifier raises an exception or *text* is empty.
+    facebook/bart-large-mnli model with descriptive keyword labels for
+    richer NLI signal.  The winning keyword label is mapped back to its
+    human-readable niche name via NICHE_LABEL_MAP.  Falls back to
+    'Politics & Economy' if the classifier raises an exception or *text*
+    is empty.
     """
     try:
         snippet = (text or "")[:512].strip()
@@ -211,7 +236,7 @@ def classify_niche(text: str) -> str:
         framed_snippet = "Classify this news article into the most relevant financial and economic category: " + snippet
         classifier = _get_classifier()
         result     = classifier(framed_snippet, NICHE_LABELS)
-        return result["labels"][0]          # highest-scoring label
+        return NICHE_LABEL_MAP[result["labels"][0]]   # map keyword label → niche name
     except Exception as e:
         print(f"    [!] Classifier error — defaulting to Politics & Economy: {e}")
         return "Politics & Economy"
@@ -348,13 +373,25 @@ def main():
         f"→  {len(unique)} unique\n"
     )
 
-    # ── 4. Classify niche, score sentiment, collect DB rows ───────────────────
-    print(f"Classifying niches + scoring {len(unique)} articles with FinBERT…\n")
+    # ── 4. Skip articles already in the database ──────────────────────────────
+    cur = conn.cursor()
+    cur.execute("SELECT title FROM headlines")
+    existing_titles: set[str] = {row[0].lower() for row in cur.fetchall()}
+    cur.close()
+
+    new_articles = [a for a in unique if a["title"].lower() not in existing_titles]
+    already_in_db = len(unique) - len(new_articles)
+    print(
+        f"  DB check: {len(new_articles)} new  |  {already_in_db} already in database — skipping those\n"
+    )
+
+    # ── 5. Classify niche, score sentiment, collect DB rows ───────────────────
+    print(f"Classifying niches + scoring {len(new_articles)} articles with FinBERT…\n")
 
     niche_counts: dict[str, int] = {}
     rows: list[tuple] = []
 
-    for i, a in enumerate(unique, 1):
+    for i, a in enumerate(new_articles, 1):
         text  = fetch_article_text(a["url"]) or a["title"]
         niche = classify_niche(text)
         sc    = score_finbert(text)
@@ -372,12 +409,12 @@ def main():
         ))
 
         title_preview = a["title"][:70] + "…" if len(a["title"]) > 70 else a["title"]
-        print(f"  [{i:3d}/{len(unique)}] {title_preview}")
+        print(f"  [{i:3d}/{len(new_articles)}] {title_preview}")
         print(f"           → {niche}")
 
         time.sleep(0.05)
 
-    # ── 5. Bulk insert ─────────────────────────────────────────────────────────
+    # ── 6. Bulk insert ─────────────────────────────────────────────────────────
     placeholder = "%s" if USE_POSTGRES else "?"
     insert_sql  = f"""
         INSERT INTO headlines
@@ -390,11 +427,11 @@ def main():
     cur.close()
     conn.close()
 
-    # ── 6. Summary ─────────────────────────────────────────────────────────────
+    # ── 7. Summary ─────────────────────────────────────────────────────────────
     db_label = DATABASE_URL.split("@")[-1] if USE_POSTGRES else DB_PATH
     print(f"\n✅  Done — {len(rows)} headlines saved to {db_label}")
     print("\n── Niche breakdown ──────────────────────────────────────────────────")
-    for niche in NICHE_LABELS:
+    for niche in NICHE_LABEL_MAP.values():
         count = niche_counts.get(niche, 0)
         if count:
             bar = "█" * min(count, 50)
