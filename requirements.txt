@@ -7,3 +7,7 @@ fastapi
 uvicorn[standard]
 psycopg2-binary
 python-dateutil
+transformers
+torch
+transformers
+torch

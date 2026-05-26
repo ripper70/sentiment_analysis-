@@ -1,7 +1,7 @@
 """
 fetch_news.py
-Pull headlines from NewsAPI + Reuters/AP RSS feeds, score with HuggingFace FinBERT
-(ProsusAI/finbert), store in DB.  Falls back to VADER if the API is unavailable.
+Pull headlines from NewsAPI + Reuters/AP RSS feeds, score with local FinBERT
+(ProsusAI/finbert via transformers), store in DB.  Falls back to VADER on error.
 Uses PostgreSQL when DATABASE_URL env var is set, otherwise falls back to SQLite.
 Run:  python3 fetch_news.py
 """
@@ -16,9 +16,10 @@ import dateutil.parser
 import feedparser
 import requests
 from newsapi import NewsApiClient
+from transformers import pipeline
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import HUGGINGFACE_API_KEY, NEWS_API_KEY, NICHES
+from config import NEWS_API_KEY, NICHES
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -31,10 +32,8 @@ if USE_POSTGRES:
 api      = NewsApiClient(api_key=NEWS_API_KEY)
 analyzer = SentimentIntensityAnalyzer()   # VADER — used as fallback only
 
-# ── FinBERT config ─────────────────────────────────────────────────────────────
-FINBERT_API_URL = "https://api-inference.huggingface.co/models/ProsusAI/finbert"
-hf_key = os.environ.get("HUGGINGFACE_API_KEY", HUGGINGFACE_API_KEY)
-FINBERT_HEADERS = {"Authorization": f"Bearer {hf_key}"}
+# ── FinBERT local model (lazy-loaded on first call) ────────────────────────────
+_finbert_pipeline = None
 
 RSS_FEEDS = [
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
@@ -119,8 +118,16 @@ def normalize_date(raw: str) -> str | None:
 
 # ── scoring ────────────────────────────────────────────────────────────────────
 
+def _get_finbert():
+    """Return the FinBERT pipeline, loading it on the first call."""
+    global _finbert_pipeline
+    if _finbert_pipeline is None:
+        _finbert_pipeline = pipeline("text-classification", model="ProsusAI/finbert")
+    return _finbert_pipeline
+
+
 def score_finbert(text: str) -> dict:
-    """Score a headline with HuggingFace FinBERT; falls back to VADER on error.
+    """Score a headline with local FinBERT; falls back to VADER on error.
 
     Returns a dict with keys: compound, pos, neg, neu — same shape as VADER so
     the rest of the pipeline needs no changes.
@@ -131,24 +138,14 @@ def score_finbert(text: str) -> dict:
       neutral  → compound= 0,     pos=0,     neg=0,     neu=score
     """
     try:
-        resp = requests.post(
-            FINBERT_API_URL,
-            headers=FINBERT_HEADERS,
-            json={"inputs": text},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        results = resp.json()
-        # HuggingFace returns [[{label, score}, ...]] (list-of-lists)
-        if results and isinstance(results[0], list):
-            results = results[0]
-        best  = max(results, key=lambda x: x["score"])
-        label = best["label"].lower()
-        s     = best["score"]
+        finbert = _get_finbert()
+        result  = finbert(text)[0]
+        label   = result["label"].lower()
+        s       = result["score"]
         if label == "positive":
-            return {"compound":  s,  "pos": s,   "neg": 0.0, "neu": 0.0}
+            return {"compound":  s,   "pos": s,   "neg": 0.0, "neu": 0.0}
         elif label == "negative":
-            return {"compound": -s,  "pos": 0.0, "neg": s,   "neu": 0.0}
+            return {"compound": -s,   "pos": 0.0, "neg": s,   "neu": 0.0}
         else:  # neutral
             return {"compound":  0.0, "pos": 0.0, "neg": 0.0, "neu": s}
     except Exception as e:
@@ -306,7 +303,7 @@ def main():
                 sc["compound"], sc["pos"], sc["neu"], sc["neg"],
                 fetched_at,
             ))
-            time.sleep(0.1)   # avoid HuggingFace rate limits
+            time.sleep(0.1)
 
     # ── bulk insert ───────────────────────────────────────────────────────────
     placeholder = "%s" if USE_POSTGRES else "?"
