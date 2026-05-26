@@ -32,7 +32,7 @@ api      = NewsApiClient(api_key=NEWS_API_KEY)
 analyzer = SentimentIntensityAnalyzer()   # VADER — used as fallback only
 
 # ── FinBERT config ─────────────────────────────────────────────────────────────
-FINBERT_API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
+FINBERT_API_URL = "https://api-inference.huggingface.co/models/ProsusAI/finbert"
 hf_key = os.environ.get("HUGGINGFACE_API_KEY", HUGGINGFACE_API_KEY)
 FINBERT_HEADERS = {"Authorization": f"Bearer {hf_key}"}
 
