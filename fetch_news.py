@@ -102,6 +102,7 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "Federal Reserve", "interest rate", "S&P 500", "Dow Jones", "Nasdaq",
         "bond yield", "JPMorgan", "Goldman Sachs", "Fed rate", "treasury yield",
         "stock market", "inflation rate", "bank earn",
+        "gold price", "silver price", "precious metal",
     ],
     "Food & Agriculture": [
         "food price", "agriculture", "grocery", "farming", "wheat price",
@@ -112,6 +113,7 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "retail sale", "Amazon earn", "consumer spending", "e-commerce",
         "Walmart earn", "Target earn", "consumer confidence", "holiday sale",
         "online shopping", "supply chain retail",
+        "auto parts", "AutoZone", "O'Reilly Auto",
     ],
     "Social Media & AdTech": [
         "Meta earn", "TikTok", "Instagram", "digital advertising",
@@ -138,6 +140,7 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "semiconductor", "NVIDIA earn", "Intel earn", "chip shortage", "TSMC",
         "Qualcomm", "AMD earn", "microchip", "chip export", "chip stock",
         "wafer", "Micron", "Broadcom",
+        "Marvell", "memory chip", "semiconductor stock",
     ],
     "Cybersecurity": [
         "data breach", "ransomware", "cybersecurity", "hacking", "cyber attack",
@@ -150,9 +153,10 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "electric car", "EV stock",
     ],
     "Bitcoin & Crypto": [
-        "bitcoin price", "cryptocurrency", "ethereum price", "crypto market",
-        "blockchain", "Coinbase", "crypto exchange", "digital asset",
-        "crypto regulation", "bitcoin ETF", "DeFi", "stablecoin",
+        "bitcoin price", "bitcoin ETF", "ethereum price", "crypto market cap",
+        "cryptocurrency exchange", "Coinbase revenue", "crypto regulation",
+        "DeFi protocol", "stablecoin", "crypto trading", "blockchain network",
+        "NFT market", "crypto wallet", "binance", "crypto fund",
     ],
     "Space Technology": [
         "SpaceX", "NASA", "rocket launch", "satellite deploy", "Starship",
