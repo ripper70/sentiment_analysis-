@@ -18,7 +18,7 @@ NICHES = {
     "Social Media & AdTech": ["social media", "TikTok", "Meta", "Instagram", "digital advertising", "Facebook", "X Twitter"],
     "Travel & Tourism":      ["airline", "airfare", "hotel prices", "tourism", "travel demand", "Delta airlines", "United airlines", "American airlines"],
     "Gaming & Esports":      ["video game", "Nintendo", "PlayStation", "Xbox", "Rockstar", "gaming industry", "esports", "Steam"],
-    "Healthcare & Biotech":  ["healthcare", "biotech", "FDA approval", "pharmaceutical", "drug trial", "clinical trial", "Medicare", "Medicaid"],
+    "Healthcare & Biotech":  ["FDA approved", "biotech", "pharmaceutical", "clinical trial", "Medicare", "Medicaid", "drug approval", "vaccine", "hospital costs", "health insurance", "Pfizer", "Moderna", "Johnson & Johnson", "Eli Lilly", "UnitedHealth"],
     "Semiconductors":        ["semiconductor", "NVIDIA", "Intel", "chip shortage", "microchip", "AMD", "TSMC", "Qualcomm"],
     "Cybersecurity":         ["cybersecurity", "data breach", "ransomware", "hacking", "cyber attack", "malware", "phishing"],
     "Electric Vehicles":     ["electric vehicle", "Tesla", "EV sales", "EV battery", "charging station", "BYD", "Rivian", "Lucid"],
