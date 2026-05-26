@@ -1,6 +1,6 @@
 NEWS_API_KEY       = "08b3d831bf3c4da7a58936bb55cc0b52"
 GUARDIAN_API_KEY   = "004ae94b-8fdf-4616-93d7-3ba02c1b3206"
-HUGGINGFACE_API_KEY = "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"
+HUGGINGFACE_API_KEY = ""
 
 # ── Railway environment variables ──────────────────────────────────────────────
 # Set the following secrets in your Railway project's Variables tab:
