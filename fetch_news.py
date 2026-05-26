@@ -315,28 +315,40 @@ def classify_niche(title: str, article_text: str) -> tuple[str, str]:
 
     Strategy
     --------
-    1. **Keyword pass** — scan *(title + first 200 chars of article_text)* against
-       NICHE_KEYWORDS.  The comparison is case-insensitive.  The first niche whose
-       any keyword phrase appears in the combined text wins immediately; the AI
-       model is never loaded.  Returns ``(niche, "[keyword]")``.
+    1. **Title keyword pass** — scan *title only* against NICHE_KEYWORDS
+       (case-insensitive).  The first niche whose any keyword phrase appears in
+       the title wins immediately; the AI model is never loaded.
+       Returns ``(niche, "[keyword-title]")``.
 
-    2. **AI fallback** — if no keyword matches, feed the first 512 characters of
+    2. **Text keyword pass** — if no title match, scan the *first 200 characters
+       of article_text* against NICHE_KEYWORDS (case-insensitive).  First match
+       wins; the AI model is still not loaded.
+       Returns ``(niche, "[keyword-text]")``.
+
+    3. **AI fallback** — if still no match, feed the first 512 characters of
        *article_text* (or *title* when article_text is empty) to the zero-shot
-       facebook/bart-large-mnli classifier with descriptive NICHE_LABELS for richer
-       NLI signal.  The winning label is mapped back via NICHE_LABEL_MAP.  Returns
-       ``(niche, "[AI]")``.
+       facebook/bart-large-mnli classifier with descriptive NICHE_LABELS for
+       richer NLI signal.  The winning label is mapped back via NICHE_LABEL_MAP.
+       Returns ``(niche, "[AI]")``.
 
     Falls back to ``("Politics & Economy", "[AI]")`` on any classifier exception or
     empty input.
     """
-    # ── Step 1: fast keyword matching ──────────────────────────────────────────
-    search_text = (title + " " + (article_text or "")[:200]).lower()
+    # ── Step 1: title-only keyword matching ────────────────────────────────────
+    title_lower = title.lower()
     for niche, keywords in NICHE_KEYWORDS.items():
         for kw in keywords:
-            if kw.lower() in search_text:
-                return niche, "[keyword]"
+            if kw.lower() in title_lower:
+                return niche, "[keyword-title]"
 
-    # ── Step 2: zero-shot AI fallback ──────────────────────────────────────────
+    # ── Step 2: article text (first 200 chars) keyword matching ────────────────
+    text_snippet = (article_text or "")[:200].lower()
+    for niche, keywords in NICHE_KEYWORDS.items():
+        for kw in keywords:
+            if kw.lower() in text_snippet:
+                return niche, "[keyword-text]"
+
+    # ── Step 3: zero-shot AI fallback ──────────────────────────────────────────
     try:
         snippet = (article_text or title or "")[:512].strip()
         if not snippet:
