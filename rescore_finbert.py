@@ -9,16 +9,18 @@ Two-pass design to beat the 6-hour GitHub Actions timeout:
             classification (batch_size=8, keyword-first so most rows never
             hit BART at all).
 
-Scores and niche labels are written back to the headlines table in chunks of 50.
+Scores and niche labels are committed to the DB in chunks of 200 rows so that
+a timeout at 80% still preserves 80% of the work (reruns are idempotent).
 
 Usage:
-    python3 rescore_finbert.py
+    python3 rescore_finbert.py [--only-niche NICHE_NAME] [--limit N]
 
 Environment:
     DATABASE_URL — PostgreSQL connection string (required; set by Railway
                    automatically, or export it locally before running).
 """
 
+import argparse
 import concurrent.futures
 import os
 
@@ -32,7 +34,7 @@ if not DATABASE_URL:
     print("ERROR: DATABASE_URL not set")
     exit(1)
 
-BATCH_SIZE = 50
+CHUNK_SIZE = 200   # rows committed per DB transaction in Pass 2
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -42,10 +44,24 @@ def get_conn():
     return psycopg2.connect(DATABASE_URL)
 
 
-def fetch_all_headlines(conn):
-    """Return every headline row as a list of (id, title, url, niche) tuples."""
+def fetch_all_headlines(conn, only_niche: str | None = None, limit: int | None = None):
+    """Return headline rows as a list of (id, title, url, niche) tuples.
+
+    Optional filters:
+      only_niche — restrict to rows WHERE niche = only_niche
+      limit      — append LIMIT N to the query
+    """
+    sql = "SELECT id, title, url, niche FROM headlines"
+    params: list = []
+    if only_niche:
+        sql += " WHERE niche = %s"
+        params.append(only_niche)
+    sql += " ORDER BY id"
+    if limit:
+        sql += " LIMIT %s"
+        params.append(limit)
     with conn.cursor() as cur:
-        cur.execute("SELECT id, title, url, niche FROM headlines ORDER BY id")
+        cur.execute(sql, params)
         return cur.fetchall()
 
 
@@ -131,7 +147,7 @@ def classify_niche_batch(titles_and_texts: list[tuple[str, str]], batch_size: in
         if matched:
             continue
         # Queue for BART
-        snippet = (article_text or title or "")[:2000].strip()
+        snippet = (article_text or title or "")[:800].strip()
         if not snippet:
             results[idx] = ("Politics & Economy", "[AI-empty]")
         else:
@@ -166,13 +182,27 @@ def classify_niche_batch(titles_and_texts: list[tuple[str, str]], batch_size: in
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description="Re-score headlines with FinBERT.")
+    parser.add_argument(
+        "--only-niche", metavar="NICHE_NAME",
+        help="Restrict to headlines WHERE niche = NICHE_NAME",
+    )
+    parser.add_argument(
+        "--limit", type=int, metavar="N",
+        help="Process only the first N headlines (useful for smoke tests)",
+    )
+    args = parser.parse_args()
+
     print("Connecting to PostgreSQL…")
     conn = get_conn()
 
     print("Fetching all headlines…")
-    headlines = fetch_all_headlines(conn)
+    headlines = fetch_all_headlines(conn, only_niche=args.only_niche, limit=args.limit)
     total = len(headlines)
-    print(f"Found {total} headlines to re-score.\n")
+    if args.only_niche:
+        print(f"Found {total} headlines in niche '{args.only_niche}' to re-score.\n")
+    else:
+        print(f"Found {total} headlines to re-score.\n")
 
     # ── Pass 1: parallel article text fetching ─────────────────────────────────
     print(f"Pass 1: Fetching article text for {total} URLs in parallel (16 workers)…")
@@ -195,56 +225,43 @@ def main():
     fetched_ok = sum(1 for v in article_texts.values() if v)
     print(f"  ✓ Retrieved body text for {fetched_ok} / {total} URLs\n")
 
-    # ── Pass 2: batched scoring and classification ─────────────────────────────
-    print("Pass 2: Batched FinBERT scoring and BART classification…")
+    # ── Pass 2: chunked scoring, classification, and incremental DB commits ────
+    print("Pass 2: Batched FinBERT scoring and BART classification (committing every "
+          f"{CHUNK_SIZE} rows)…\n")
 
-    score_texts = [
-        article_texts.get(row_id) or title
-        for row_id, title, url, old_niche in headlines
-    ]
-    titles_and_texts = [
-        (title, article_texts.get(row_id) or "")
-        for row_id, title, url, old_niche in headlines
-    ]
+    chunks = [headlines[i:i + CHUNK_SIZE] for i in range(0, total, CHUNK_SIZE)]
+    total_chunks = len(chunks)
+    rows_done = 0
 
-    print(f"  Scoring {total} articles with FinBERT (batch_size=32)…")
-    scores = score_finbert_batch(score_texts)
+    for chunk_n, chunk in enumerate(chunks, start=1):
+        # Build inputs for this chunk
+        score_texts = [
+            article_texts.get(row_id) or title
+            for row_id, title, url, old_niche in chunk
+        ]
+        titles_and_texts = [
+            (title, article_texts.get(row_id) or "")
+            for row_id, title, url, old_niche in chunk
+        ]
 
-    print(f"  Classifying {total} articles into niches (batch_size=8)…")
-    niches = classify_niche_batch(titles_and_texts)
+        # Score and classify
+        scores = score_finbert_batch(score_texts)
+        niches = classify_niche_batch(titles_and_texts)
 
-    # ── Build batch buffer and bulk-update ────────────────────────────────────
-    print("\nWriting results to database…")
-    batch_buf: list[tuple] = []
-    updated = 0
-
-    for i, (row, sc, (new_niche, method)) in enumerate(zip(headlines, scores, niches), start=1):
-        row_id, title, url, old_niche = row
-        batch_buf.append((sc["compound"], sc["pos"], sc["neg"], sc["neu"], new_niche, row_id))
-
-        # Cheap per-article progress: print every 100th article
-        if i % 100 == 0:
-            niche_changed = old_niche != new_niche
-            title_preview = title[:65] + "…" if len(title) > 65 else title
-            arrow = f"{old_niche} → {new_niche}" if niche_changed else f"{old_niche} (unchanged)"
-            print(f"  [{i:4d}/{total}] {title_preview}")
-            print(f"           niche: {arrow}  {method}")
-
-        if len(batch_buf) >= BATCH_SIZE:
-            update_scores(conn, batch_buf)
-            updated += len(batch_buf)
-            batch_buf.clear()
-            pct = updated / total * 100
-            print(f"\n  ── Progress: {updated}/{total} ({pct:.1f}%) updated ──\n")
-
-    # ── flush remainder ────────────────────────────────────────────────────────
-    if batch_buf:
+        # Build update tuples and commit immediately
+        batch_buf: list[tuple] = [
+            (sc["compound"], sc["pos"], sc["neg"], sc["neu"], new_niche, row_id)
+            for (row_id, title, url, old_niche), sc, (new_niche, method)
+            in zip(chunk, scores, niches)
+        ]
         update_scores(conn, batch_buf)
-        updated += len(batch_buf)
-        batch_buf.clear()
+        rows_done += len(batch_buf)
+        pct = rows_done / total * 100
+        print(f"  ✓ Committed chunk {chunk_n}/{total_chunks} "
+              f"({rows_done}/{total} rows, {pct:.1f}%)")
 
     conn.close()
-    print(f"\n✅  Done — {updated}/{total} headlines re-scored with FinBERT and niches reclassified.")
+    print(f"\n✅  Done — {rows_done}/{total} headlines re-scored with FinBERT and niches reclassified.")
 
 
 if __name__ == "__main__":

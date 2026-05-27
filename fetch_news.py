@@ -362,7 +362,7 @@ def classify_niche(title: str, article_text: str) -> tuple[str, str]:
 
     # ── Step 3: zero-shot AI fallback ──────────────────────────────────────────
     try:
-        snippet = (article_text or title or "")[:2000].strip()
+        snippet = (article_text or title or "")[:800].strip()
         if not snippet:
             return "Politics & Economy", "[AI]"
         framed_snippet = "This news article is primarily about: " + snippet
