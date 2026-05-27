@@ -268,10 +268,35 @@ def normalize_date(raw: str) -> str | None:
 # ── FinBERT sentiment scoring ──────────────────────────────────────────────────
 
 def _get_finbert():
-    """Return the FinBERT pipeline, loading it on the first call."""
+    """Return the FinBERT pipeline, loading it on the first call.
+
+    Auto-selects device: MPS (Apple Silicon GPU) > CUDA (NVIDIA GPU) > CPU.
+    Falls back to CPU on any device error.
+    """
     global _finbert_pipeline
     if _finbert_pipeline is None:
-        _finbert_pipeline = pipeline("text-classification", model="ProsusAI/finbert")
+        import torch
+        # Device selection: MPS for Apple Silicon, CUDA for NVIDIA, else CPU
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+        print(f"  [finbert] Loading ProsusAI/finbert on {device.upper()} (first run only)…")
+        try:
+            _finbert_pipeline = pipeline(
+                "text-classification",
+                model="ProsusAI/finbert",
+                device=device,
+            )
+        except Exception as e:
+            print(f"  [finbert] {device.upper()} load failed — falling back to CPU: {e}")
+            _finbert_pipeline = pipeline(
+                "text-classification",
+                model="ProsusAI/finbert",
+                device="cpu",
+            )
     return _finbert_pipeline
 
 
@@ -346,14 +371,35 @@ def score_sentiment_consumer(text: str) -> dict:
 # ── zero-shot niche classifier ─────────────────────────────────────────────────
 
 def _get_classifier():
-    """Return the zero-shot classification pipeline, loading it on first call."""
+    """Return the zero-shot classification pipeline, loading it on first call.
+
+    Auto-selects device: MPS (Apple Silicon GPU) > CUDA (NVIDIA GPU) > CPU.
+    Falls back to CPU on any device error.
+    """
     global _classifier_pipeline
     if _classifier_pipeline is None:
-        print("  [classifier] Loading facebook/bart-large-mnli (first run only)…")
-        _classifier_pipeline = pipeline(
-            "zero-shot-classification",
-            model="facebook/bart-large-mnli",
-        )
+        import torch
+        # Device selection: MPS for Apple Silicon, CUDA for NVIDIA, else CPU
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+        print(f"  [classifier] Loading facebook/bart-large-mnli on {device.upper()} (first run only)…")
+        try:
+            _classifier_pipeline = pipeline(
+                "zero-shot-classification",
+                model="facebook/bart-large-mnli",
+                device=device,
+            )
+        except Exception as e:
+            print(f"  [classifier] {device.upper()} load failed — falling back to CPU: {e}")
+            _classifier_pipeline = pipeline(
+                "zero-shot-classification",
+                model="facebook/bart-large-mnli",
+                device="cpu",
+            )
     return _classifier_pipeline
 
 
