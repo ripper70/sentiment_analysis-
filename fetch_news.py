@@ -305,6 +305,44 @@ def score_finbert(text: str) -> dict:
         return analyzer.polarity_scores(text)
 
 
+# ── consumer-framed BART sentiment scoring ────────────────────────────────────
+
+SENTIMENT_LABELS = [
+    "This is good news for consumers and investors",
+    "This is bad news for consumers and investors",
+    "This is neutral or unrelated to consumer finances",
+]
+
+
+def score_sentiment_consumer(text: str) -> dict:
+    """Score consumer-framed sentiment using BART zero-shot.
+
+    Returns a dict with keys: compound, pos, neg, neu — same shape as score_finbert.
+    Maps:
+      good news → compound=+score, pos=score, neg=0, neu=0
+      bad news  → compound=-score, pos=0, neg=score, neu=0
+      neutral   → compound=0, pos=0, neg=0, neu=score
+    """
+    try:
+        classifier = _get_classifier()
+        snippet = text[:800].strip() if text else ""
+        if not snippet:
+            return {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": 1.0}
+        framed = "This news article describes a situation where: " + snippet
+        result = classifier(framed, SENTIMENT_LABELS)
+        top_label = result["labels"][0]
+        top_score = result["scores"][0]
+        if "good news" in top_label:
+            return {"compound": top_score, "pos": top_score, "neg": 0.0, "neu": 0.0}
+        elif "bad news" in top_label:
+            return {"compound": -top_score, "pos": 0.0, "neg": top_score, "neu": 0.0}
+        else:
+            return {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": top_score}
+    except Exception as e:
+        print(f"    [!] Consumer sentiment error — falling back to VADER: {e}")
+        return analyzer.polarity_scores(text)
+
+
 # ── zero-shot niche classifier ─────────────────────────────────────────────────
 
 def _get_classifier():
@@ -520,7 +558,7 @@ def main():
     )
 
     # ── 5. Classify niche, score sentiment, collect DB rows ───────────────────
-    print(f"Classifying niches + scoring {len(new_articles)} articles with FinBERT…\n")
+    print(f"Classifying niches + scoring {len(new_articles)} articles with consumer-framed BART…\n")
 
     niche_counts: dict[str, int] = {}
     rows: list[tuple] = []
@@ -529,7 +567,7 @@ def main():
         article_text   = fetch_article_text(a["url"]) or ""
         text           = article_text or a["title"]   # full content or title for FinBERT
         niche, method  = classify_niche(a["title"], article_text)
-        sc             = score_finbert(text)
+        sc             = score_sentiment_consumer(text)
 
         niche_counts[niche] = niche_counts.get(niche, 0) + 1
 

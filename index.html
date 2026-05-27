@@ -450,7 +450,7 @@
   <div class="header-right">
     <div class="last-updated">
       <div id="ts-top"></div>
-      <div>FinBERT sentiment scores</div>
+      <div>AI sentiment scores</div>
     </div>
     <span class="badge-live">Live</span>
   </div>
@@ -483,7 +483,7 @@
     <div class="card">
       <div class="card-header">
         <div class="card-title">Niche Sentiment Rankings</div>
-        <div class="card-subtitle">FinBERT compound score — range −1.0 (most bearish) → +1.0 (most bullish)</div>
+        <div class="card-subtitle">Sentiment score — range −1.0 (most bearish) → +1.0 (most bullish)</div>
       </div>
       <div class="bar-scroll-outer"><div class="bar-wrap"><canvas id="barChart"></canvas></div></div>
     </div>
@@ -544,7 +544,7 @@
 </div><!-- /container -->
 
 <footer>
-  Powered by FinBERT · Zero-Shot NLI Classification · Visualizations by <a href="https://www.chartjs.org" style="color:var(--accent);text-decoration:none">Chart.js</a> ·
+  Powered by Zero-Shot NLI Classification · Visualizations by <a href="https://www.chartjs.org" style="color:var(--accent);text-decoration:none">Chart.js</a> ·
   Snapshot: <span id="ts-footer"></span>
 </footer>
 
@@ -689,13 +689,13 @@ function renderKPIs(niches) {
     <div class="kpi-card c-green">
       <div class="kpi-label">Most Bullish Niche</div>
       <div class="kpi-value" style="color:#22c55e;font-size:1.25rem;line-height:1.2">${top.icon} ${top.name}</div>
-      <div class="kpi-sub">${fmt(top.avg_compound)} FinBERT · ${top.count} headlines</div>
+      <div class="kpi-sub">${fmt(top.avg_compound)} · ${top.count} headlines</div>
       <span class="kpi-icon">🚀</span>
     </div>
     <div class="kpi-card c-red">
       <div class="kpi-label">Most Bearish Niche</div>
       <div class="kpi-value" style="color:#ef4444;font-size:1.25rem;line-height:1.2">${bot.icon} ${bot.name}</div>
-      <div class="kpi-sub">${fmt(bot.avg_compound)} FinBERT · ${bot.count} headlines</div>
+      <div class="kpi-sub">${fmt(bot.avg_compound)} · ${bot.count} headlines</div>
       <span class="kpi-icon">📉</span>
     </div>
     <div class="kpi-card c-yellow">
@@ -737,7 +737,7 @@ function renderBarChart(niches) {
         tooltip: {
           callbacks: {
             title:      ctx => `${ctx[0].label.trim()}`,
-            label:      ctx => ` FinBERT: ${fmt(ctx.raw)}   ${lbl(ctx.raw) === 'positive' ? '● Bullish' : lbl(ctx.raw) === 'negative' ? '● Bearish' : '● Neutral'}`,
+            label:      ctx => ` Score: ${fmt(ctx.raw)}   ${lbl(ctx.raw) === 'positive' ? '● Bullish' : lbl(ctx.raw) === 'negative' ? '● Bearish' : '● Neutral'}`,
             afterLabel: ctx => {
               const n = sorted[ctx.dataIndex];
               return n ? ` ${n.count} headlines analyzed` : '';
@@ -962,7 +962,7 @@ async function loadDashboard() {
     const headerSub = document.querySelector('.header p');
     if (headerSub) {
       headerSub.textContent =
-        `FinBERT Sentiment Analysis · ${niches.length} Market Niches · ${totalHL.toLocaleString()} Headlines Analyzed`;
+        `AI Sentiment Analysis · ${niches.length} Market Niches · ${totalHL.toLocaleString()} Headlines Analyzed`;
     }
 
     // Round 2 — fetch 20 headlines per niche in parallel, then flatten + sort

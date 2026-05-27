@@ -112,6 +112,49 @@ def score_finbert_batch(texts: list[str], batch_size: int = 32) -> list[dict]:
     return results
 
 
+def score_sentiment_consumer_batch(texts: list[str], batch_size: int = 8) -> list[dict]:
+    """Batched consumer-framed sentiment via BART zero-shot.
+    Returns list of {compound, pos, neg, neu} dicts in input order."""
+    from fetch_news import SENTIMENT_LABELS, _get_classifier, analyzer
+    classifier = _get_classifier()
+    framed_texts = []
+    for t in texts:
+        snippet = (t or "")[:800].strip()
+        if not snippet:
+            framed_texts.append(None)
+        else:
+            framed_texts.append("This news article describes a situation where: " + snippet)
+
+    results: list[dict] = [None] * len(texts)
+    # Process non-empty inputs in batches
+    queue = [(i, ft) for i, ft in enumerate(framed_texts) if ft is not None]
+    for i in range(0, len(queue), batch_size):
+        chunk = queue[i:i + batch_size]
+        chunk_texts = [ft for _, ft in chunk]
+        try:
+            preds = classifier(chunk_texts, SENTIMENT_LABELS)
+            if isinstance(preds, dict):
+                preds = [preds]
+            for (orig_idx, _), pred in zip(chunk, preds):
+                top_label = pred["labels"][0]
+                top_score = pred["scores"][0]
+                if "good news" in top_label:
+                    results[orig_idx] = {"compound": top_score, "pos": top_score, "neg": 0.0, "neu": 0.0}
+                elif "bad news" in top_label:
+                    results[orig_idx] = {"compound": -top_score, "pos": 0.0, "neg": top_score, "neu": 0.0}
+                else:
+                    results[orig_idx] = {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": top_score}
+        except Exception as e:
+            print(f"    [!] Consumer sentiment batch error — falling back to VADER for {len(chunk)} items: {e}")
+            for orig_idx, _ in chunk:
+                results[orig_idx] = analyzer.polarity_scores(texts[orig_idx] or "")
+    # Fill in empty inputs as neutral
+    for i, r in enumerate(results):
+        if r is None:
+            results[i] = {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": 1.0}
+    return results
+
+
 def classify_niche_batch(titles_and_texts: list[tuple[str, str]], batch_size: int = 8) -> list[tuple[str, str]]:
     """Batched version of classify_niche. Input: list of (title, article_text).
     Output: list of (niche, method). Runs keyword passes first (free), then
@@ -226,8 +269,8 @@ def main():
     print(f"  ✓ Retrieved body text for {fetched_ok} / {total} URLs\n")
 
     # ── Pass 2: chunked scoring, classification, and incremental DB commits ────
-    print("Pass 2: Batched FinBERT scoring and BART classification (committing every "
-          f"{CHUNK_SIZE} rows)…\n")
+    print("Pass 2: Batched consumer-framed BART sentiment scoring and niche classification "
+          f"(committing every {CHUNK_SIZE} rows)…\n")
 
     chunks = [headlines[i:i + CHUNK_SIZE] for i in range(0, total, CHUNK_SIZE)]
     total_chunks = len(chunks)
@@ -245,7 +288,7 @@ def main():
         ]
 
         # Score and classify
-        scores = score_finbert_batch(score_texts)
+        scores = score_sentiment_consumer_batch(score_texts)
         niches = classify_niche_batch(titles_and_texts)
 
         # Build update tuples and commit immediately
@@ -261,7 +304,7 @@ def main():
               f"({rows_done}/{total} rows, {pct:.1f}%)")
 
     conn.close()
-    print(f"\n✅  Done — {rows_done}/{total} headlines re-scored with FinBERT and niches reclassified.")
+    print(f"\n✅  Done — {rows_done}/{total} headlines re-scored with consumer-framed BART and niches reclassified.")
 
 
 if __name__ == "__main__":
