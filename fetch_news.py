@@ -135,6 +135,8 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "clinical trial", "Medicare fund", "Medicaid", "drug approval",
         "vaccine", "Pfizer", "Moderna", "UnitedHealth", "Eli Lilly",
         "hospital stock",
+        "supplement", "gummies", "GABA", "tinnitus", "psychedelic",
+        "brain health", "weight loss drug",
     ],
     "Semiconductors": [
         "semiconductor", "NVIDIA earn", "Intel earn", "chip shortage", "TSMC",
@@ -167,6 +169,7 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "artificial intelligence earn", "ChatGPT", "OpenAI", "Anthropic",
         "generative AI", "machine learning stock", "LLM", "AI regulation",
         "NVIDIA AI", "AI investment", "AI chip", "foundation model",
+        "AI executive order", "David Sacks",
     ],
     "Politics & Economy": [
         "Congress vote", "Senate bill", "White House policy", "President Trump",
@@ -174,6 +177,8 @@ NICHE_KEYWORDS: dict[str, list[str]] = {
         "government shutdown", "debt ceiling", "federal budget",
         "economic sanction", "geopolitical", "election result",
         "executive order", "Treasury Secretary",
+        "Republican", "Democrat", "Senate", "House vote", "campaign",
+        "primary election",
     ],
 }
 
@@ -329,11 +334,14 @@ def classify_niche(title: str, article_text: str) -> tuple[str, str]:
        wins; the AI model is still not loaded.
        Returns ``(niche, "[keyword-text]")``.
 
-    3. **AI fallback** — if still no match, feed the first 512 characters of
+    3. **AI fallback** — if still no match, feed the first 2000 characters of
        *article_text* (or *title* when article_text is empty) to the zero-shot
-       facebook/bart-large-mnli classifier with descriptive NICHE_LABELS for
-       richer NLI signal.  The winning label is mapped back via NICHE_LABEL_MAP.
-       Returns ``(niche, "[AI]")``.
+       facebook/bart-large-mnli classifier.  Uses hypothesis-style framing
+       ("This news article is primarily about: …") for better NLI signal.
+       If the top score is below 0.35 (weak guess), returns
+       ``("Politics & Economy", "[AI-low-confidence]")`` instead of forcing a
+       random niche.  The winning label is mapped back via NICHE_LABEL_MAP.
+       Returns ``(niche, "[AI]")`` on confident classification.
 
     Falls back to ``("Politics & Economy", "[AI]")`` on any classifier exception or
     empty input.
@@ -354,15 +362,14 @@ def classify_niche(title: str, article_text: str) -> tuple[str, str]:
 
     # ── Step 3: zero-shot AI fallback ──────────────────────────────────────────
     try:
-        snippet = (article_text or title or "")[:512].strip()
+        snippet = (article_text or title or "")[:2000].strip()
         if not snippet:
             return "Politics & Economy", "[AI]"
-        framed_snippet = (
-            "Classify this news article into the most relevant financial and "
-            "economic category: " + snippet
-        )
+        framed_snippet = "This news article is primarily about: " + snippet
         classifier = _get_classifier()
         result     = classifier(framed_snippet, NICHE_LABELS)
+        if result["scores"][0] < 0.35:
+            return "Politics & Economy", "[AI-low-confidence]"
         return NICHE_LABEL_MAP[result["labels"][0]], "[AI]"   # map label → niche name
     except Exception as e:
         print(f"    [!] Classifier error — defaulting to Politics & Economy: {e}")
@@ -375,8 +382,8 @@ def fetch_article_text(url: str) -> str | None:
     """Fetch full article body text for richer sentiment/classification scoring.
 
     Makes a browser-like GET request, extracts all <p> tag text via
-    BeautifulSoup, and returns the first 512 characters (FinBERT's practical
-    max input length).  Returns None when:
+    BeautifulSoup, and returns the first 2500 characters (enough context for
+    BART classification and FinBERT scoring).  Returns None when:
       - the request fails or times out (5 s limit)
       - the extracted text is shorter than 100 characters
       - any other exception occurs
@@ -396,7 +403,7 @@ def fetch_article_text(url: str) -> str | None:
         text = " ".join(p.get_text() for p in soup.find_all("p")).strip()
         if len(text) < 100:
             return None
-        return text[:512]
+        return text[:2500]
     except Exception:
         return None
 
