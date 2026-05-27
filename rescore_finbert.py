@@ -123,7 +123,7 @@ def score_sentiment_consumer_batch(texts: list[str], batch_size: int = 8) -> lis
         if not snippet:
             framed_texts.append(None)
         else:
-            framed_texts.append("This news article describes a situation where: " + snippet)
+            framed_texts.append("An investor reading this news would react: " + snippet)
 
     results: list[dict] = [None] * len(texts)
     # Process non-empty inputs in batches
@@ -136,11 +136,21 @@ def score_sentiment_consumer_batch(texts: list[str], batch_size: int = 8) -> lis
             if isinstance(preds, dict):
                 preds = [preds]
             for (orig_idx, _), pred in zip(chunk, preds):
-                top_label = pred["labels"][0]
-                top_score = pred["scores"][0]
-                if "good news" in top_label:
+                labels = pred["labels"]
+                scores = pred["scores"]
+                top_label = labels[0]
+                top_score = scores[0]
+                second_label = labels[1]
+                second_score = scores[1]
+
+                # Margin rule: if neutral barely wins, flip to the second-place directional label
+                if "Indifferently" in top_label and (top_score - second_score) < 0.10:
+                    top_label = second_label
+                    top_score = second_score
+
+                if "Bullishly" in top_label:
                     results[orig_idx] = {"compound": top_score, "pos": top_score, "neg": 0.0, "neu": 0.0}
-                elif "bad news" in top_label:
+                elif "Bearishly" in top_label:
                     results[orig_idx] = {"compound": -top_score, "pos": 0.0, "neg": top_score, "neu": 0.0}
                 else:
                     results[orig_idx] = {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": top_score}

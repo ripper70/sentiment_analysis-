@@ -333,9 +333,9 @@ def score_finbert(text: str) -> dict:
 # ── consumer-framed BART sentiment scoring ────────────────────────────────────
 
 SENTIMENT_LABELS = [
-    "This is good news for consumers and investors",
-    "This is bad news for consumers and investors",
-    "This is neutral or unrelated to consumer finances",
+    "Bullishly — stock prices and consumer financial outlook are likely to rise",
+    "Bearishly — stock prices and consumer financial outlook are likely to fall",
+    "Indifferently — this news has no meaningful impact on stocks or consumer finances",
 ]
 
 
@@ -353,13 +353,23 @@ def score_sentiment_consumer(text: str) -> dict:
         snippet = text[:800].strip() if text else ""
         if not snippet:
             return {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": 1.0}
-        framed = "This news article describes a situation where: " + snippet
+        framed = "An investor reading this news would react: " + snippet
         result = classifier(framed, SENTIMENT_LABELS)
-        top_label = result["labels"][0]
-        top_score = result["scores"][0]
-        if "good news" in top_label:
+        labels = result["labels"]
+        scores = result["scores"]
+        top_label = labels[0]
+        top_score = scores[0]
+        second_label = labels[1]
+        second_score = scores[1]
+
+        # Margin rule: if neutral barely wins, flip to the second-place directional label
+        if "Indifferently" in top_label and (top_score - second_score) < 0.10:
+            top_label = second_label
+            top_score = second_score
+
+        if "Bullishly" in top_label:
             return {"compound": top_score, "pos": top_score, "neg": 0.0, "neu": 0.0}
-        elif "bad news" in top_label:
+        elif "Bearishly" in top_label:
             return {"compound": -top_score, "pos": 0.0, "neg": top_score, "neu": 0.0}
         else:
             return {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": top_score}
