@@ -15,6 +15,7 @@ import email.utils
 import json
 import os
 import sqlite3
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -31,6 +32,22 @@ from anthropic import Anthropic
 from config import ANTHROPIC_API_KEY, NEWS_API_KEY
 
 _claude_client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=5) if ANTHROPIC_API_KEY else None
+
+# Rate limiter: cap Claude calls to stay safely under the 50 req/min account limit.
+# 45 req/min = one call every ~1.33s. Shared across all threads.
+_CLAUDE_MIN_INTERVAL = 60.0 / 45.0   # seconds between calls
+_claude_rate_lock = threading.Lock()
+_claude_last_call = [0.0]   # list so it's mutable inside the lock
+
+
+def _claude_rate_limit():
+    """Block until enough time has passed to respect the rate limit."""
+    with _claude_rate_lock:
+        now = time.monotonic()
+        wait = _CLAUDE_MIN_INTERVAL - (now - _claude_last_call[0])
+        if wait > 0:
+            time.sleep(wait)
+        _claude_last_call[0] = time.monotonic()
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -502,6 +519,7 @@ def score_and_classify_claude(title: str, article_text: str) -> tuple[str, dict,
             " market impact, not consumer convenience or literal word tone."
         )
 
+        _claude_rate_limit()
         response = _claude_client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=256,
