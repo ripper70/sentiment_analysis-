@@ -26,7 +26,7 @@ import os
 
 import psycopg2
 
-from fetch_news import classify_niche, fetch_article_text, score_finbert  # noqa: F401 – kept for compatibility
+from fetch_news import classify_niche, fetch_article_text, score_finbert, score_and_classify_claude  # noqa: F401 – kept for compatibility
 
 # ── connection config ──────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -232,6 +232,16 @@ def classify_niche_batch(titles_and_texts: list[tuple[str, str]], batch_size: in
     return results  # type: ignore
 
 
+# ── Claude scoring helper (called concurrently in Pass 2) ─────────────────────
+
+def _score_row_claude(row, article_texts):
+    """Score one headline row via Claude. Returns (row_id, compound, pos, neg, neu, niche)."""
+    row_id, title, url, old_niche = row
+    article_text = article_texts.get(row_id) or ""
+    niche, sc, method = score_and_classify_claude(title, article_text)
+    return (row_id, sc["compound"], sc["pos"], sc["neg"], sc["neu"], niche)
+
+
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -278,35 +288,21 @@ def main():
     fetched_ok = sum(1 for v in article_texts.values() if v)
     print(f"  ✓ Retrieved body text for {fetched_ok} / {total} URLs\n")
 
-    # ── Pass 2: chunked scoring, classification, and incremental DB commits ────
-    print("Pass 2: Batched consumer-framed BART sentiment scoring and niche classification "
-          f"(committing every {CHUNK_SIZE} rows)…\n")
+    # ── Pass 2: concurrent Claude scoring and incremental DB commits ──────────
+    print("Pass 2: Claude sentiment scoring and niche classification "
+          f"(8 concurrent workers, committing every {CHUNK_SIZE} rows)…\n")
 
     chunks = [headlines[i:i + CHUNK_SIZE] for i in range(0, total, CHUNK_SIZE)]
     total_chunks = len(chunks)
     rows_done = 0
 
     for chunk_n, chunk in enumerate(chunks, start=1):
-        # Build inputs for this chunk
-        score_texts = [
-            article_texts.get(row_id) or title
-            for row_id, title, url, old_niche in chunk
-        ]
-        titles_and_texts = [
-            (title, article_texts.get(row_id) or "")
-            for row_id, title, url, old_niche in chunk
-        ]
-
-        # Score and classify
-        scores = score_sentiment_consumer_batch(score_texts)
-        niches = classify_niche_batch(titles_and_texts)
-
-        # Build update tuples and commit immediately
-        batch_buf: list[tuple] = [
-            (sc["compound"], sc["pos"], sc["neg"], sc["neu"], new_niche, row_id)
-            for (row_id, title, url, old_niche), sc, (new_niche, method)
-            in zip(chunk, scores, niches)
-        ]
+        batch_buf: list[tuple] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(_score_row_claude, row, article_texts): row for row in chunk}
+            for future in concurrent.futures.as_completed(futures):
+                row_id, compound, pos, neg, neu, niche = future.result()
+                batch_buf.append((compound, pos, neg, neu, niche, row_id))
         update_scores(conn, batch_buf)
         rows_done += len(batch_buf)
         pct = rows_done / total * 100
@@ -314,7 +310,7 @@ def main():
               f"({rows_done}/{total} rows, {pct:.1f}%)")
 
     conn.close()
-    print(f"\n✅  Done — {rows_done}/{total} headlines re-scored with consumer-framed BART and niches reclassified.")
+    print(f"\n✅  Done — {rows_done}/{total} headlines re-scored with Claude and niches reclassified.")
 
 
 if __name__ == "__main__":
