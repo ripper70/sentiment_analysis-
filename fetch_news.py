@@ -30,7 +30,7 @@ from anthropic import Anthropic
 
 from config import ANTHROPIC_API_KEY, NEWS_API_KEY
 
-_claude_client = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+_claude_client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0, max_retries=2) if ANTHROPIC_API_KEY else None
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -507,7 +507,12 @@ def score_and_classify_claude(title: str, article_text: str) -> tuple[str, dict,
             " war/conflict escalation, consumer confidence drops → bearish\n"
             "- Score magnitude reflects impact: massive contract = +0.8, minor positive = +0.3"
             " (inverse for bearish)\n"
-            "- Judge impact on investors/consumers, not just literal word tone"
+            "- IMPORTANT — always judge sentiment from the perspective of an INVESTOR in"
+            " the relevant sector or asset: will this likely push related stock/asset"
+            " prices UP (bullish) or DOWN (bearish)? Examples of this frame: falling oil"
+            " prices = bearish for the energy sector; rising interest rates = bearish for"
+            " stocks and bonds; rising wages = can be bearish for corporate margins. Judge"
+            " market impact, not consumer convenience or literal word tone."
         )
 
         response = _claude_client.messages.create(
