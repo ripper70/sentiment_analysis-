@@ -30,7 +30,7 @@ from anthropic import Anthropic
 
 from config import ANTHROPIC_API_KEY, NEWS_API_KEY
 
-_claude_client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0, max_retries=2) if ANTHROPIC_API_KEY else None
+_claude_client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=5) if ANTHROPIC_API_KEY else None
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -283,23 +283,15 @@ def _get_finbert():
     """
     global _finbert_pipeline
     if _finbert_pipeline is None:
-        import torch
-        # Device selection: MPS for Apple Silicon, CUDA for NVIDIA, else CPU
-        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            device = "mps"
-        elif torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
-        print(f"  [finbert] Loading ProsusAI/finbert on {device.upper()} (first run only)…")
+        print("  [finbert] Loading ProsusAI/finbert on CPU (first run only)…")
         try:
             _finbert_pipeline = pipeline(
                 "text-classification",
                 model="ProsusAI/finbert",
-                device=device,
+                device="cpu",
             )
         except Exception as e:
-            print(f"  [finbert] {device.upper()} load failed — falling back to CPU: {e}")
+            print(f"  [finbert] CPU load failed — falling back to CPU retry: {e}")
             _finbert_pipeline = pipeline(
                 "text-classification",
                 model="ProsusAI/finbert",
@@ -396,23 +388,15 @@ def _get_classifier():
     """
     global _classifier_pipeline
     if _classifier_pipeline is None:
-        import torch
-        # Device selection: MPS for Apple Silicon, CUDA for NVIDIA, else CPU
-        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            device = "mps"
-        elif torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
-        print(f"  [classifier] Loading facebook/bart-large-mnli on {device.upper()} (first run only)…")
+        print("  [classifier] Loading facebook/bart-large-mnli on CPU (first run only)…")
         try:
             _classifier_pipeline = pipeline(
                 "zero-shot-classification",
                 model="facebook/bart-large-mnli",
-                device=device,
+                device="cpu",
             )
         except Exception as e:
-            print(f"  [classifier] {device.upper()} load failed — falling back to CPU: {e}")
+            print(f"  [classifier] CPU load failed — falling back to CPU retry: {e}")
             _classifier_pipeline = pipeline(
                 "zero-shot-classification",
                 model="facebook/bart-large-mnli",

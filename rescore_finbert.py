@@ -290,7 +290,7 @@ def main():
 
     # ── Pass 2: concurrent Claude scoring and incremental DB commits ──────────
     print("Pass 2: Claude sentiment scoring and niche classification "
-          f"(8 concurrent workers, committing every {CHUNK_SIZE} rows)…\n")
+          f"(3 concurrent workers, committing every {CHUNK_SIZE} rows)…\n")
 
     chunks = [headlines[i:i + CHUNK_SIZE] for i in range(0, total, CHUNK_SIZE)]
     total_chunks = len(chunks)
@@ -298,7 +298,7 @@ def main():
 
     for chunk_n, chunk in enumerate(chunks, start=1):
         batch_buf: list[tuple] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = {executor.submit(_score_row_claude, row, article_texts): row for row in chunk}
             for future in concurrent.futures.as_completed(futures):
                 row_id, compound, pos, neg, neu, niche = future.result()
