@@ -211,6 +211,7 @@ BROAD_KEYWORDS: list[str] = [
 ]
 
 RSS_FEEDS = [
+    # ── General Business ──────────────────────────────────────────────────
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
@@ -227,6 +228,22 @@ RSS_FEEDS = [
     "https://www.investing.com/rss/news.rss",
     "https://fortune.com/feed/",
     "https://axios.com/feeds/feed.rss",
+    # ── Tech ──────────────────────────────────────────────────────────────
+    "https://www.theverge.com/rss/index.xml",
+    "https://feeds.arstechnica.com/arstechnica/index",
+    "https://techcrunch.com/feed/",
+    "https://www.wired.com/feed/rss",
+    "https://www.engadget.com/rss.xml",
+    # ── Finance / Markets ─────────────────────────────────────────────────
+    "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+    "https://seekingalpha.com/market_currents.xml",
+    "https://www.ft.com/rss/home",
+    "https://www.businessinsider.com/rss",
+    # ── Global / General ──────────────────────────────────────────────────
+    "https://feeds.apnews.com/rss/apf-business",
+    "https://www.theguardian.com/business/rss",
+    "https://www.aljazeera.com/xml/rss/all.xml",
+    "https://feeds.npr.org/1006/rss.xml",
 ]
 
 GOSSIP_BLOCKLIST = [
