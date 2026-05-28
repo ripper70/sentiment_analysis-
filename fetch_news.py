@@ -250,6 +250,9 @@ def init_db(conn):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_niche   ON headlines(niche)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_fetched ON headlines(fetched)")
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_title_source ON headlines(title, source)"
+    )
     conn.commit()
 
 
@@ -722,11 +725,19 @@ def main():
 
     # ── 6. Bulk insert ─────────────────────────────────────────────────────────
     placeholder = "%s" if USE_POSTGRES else "?"
-    insert_sql  = f"""
-        INSERT INTO headlines
-          (niche, title, source, url, published, compound, pos, neu, neg, fetched)
-        VALUES ({', '.join([placeholder] * 10)})
-    """
+    if USE_POSTGRES:
+        insert_sql = f"""
+            INSERT INTO headlines
+              (niche, title, source, url, published, compound, pos, neu, neg, fetched)
+            VALUES ({', '.join([placeholder] * 10)})
+            ON CONFLICT (title, source) DO NOTHING
+        """
+    else:
+        insert_sql = f"""
+            INSERT OR IGNORE INTO headlines
+              (niche, title, source, url, published, compound, pos, neu, neg, fetched)
+            VALUES ({', '.join([placeholder] * 10)})
+        """
     cur = conn.cursor()
     cur.executemany(insert_sql, rows)
     conn.commit()
