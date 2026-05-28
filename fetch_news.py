@@ -12,6 +12,7 @@ Run:  python3 fetch_news.py
 """
 
 import email.utils
+import json
 import os
 import sqlite3
 import time
@@ -25,7 +26,11 @@ from newsapi import NewsApiClient
 from transformers import pipeline
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from config import NEWS_API_KEY
+from anthropic import Anthropic
+
+from config import ANTHROPIC_API_KEY, NEWS_API_KEY
+
+_claude_client = Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -470,6 +475,74 @@ def classify_niche(title: str, article_text: str) -> tuple[str, str]:
         return "Politics & Economy", "[AI]"
 
 
+# ── Claude Haiku combined niche + sentiment scoring ───────────────────────────
+
+def score_and_classify_claude(title: str, article_text: str) -> tuple[str, dict, str]:
+    """Classify niche and score investor-reaction sentiment in one Claude Haiku call.
+
+    Returns (niche, sentiment_dict, method_string).
+    Falls back to classify_niche() + score_sentiment_consumer() on any failure.
+    """
+    if _claude_client is None:
+        niche, _ = classify_niche(title, article_text)
+        return niche, score_sentiment_consumer(article_text or title), "[fallback-bart]"
+
+    try:
+        niche_names = list(NICHE_LABEL_MAP.values())
+        snippet = (article_text or title or "")[:1500].strip()
+
+        prompt = (
+            f"Article title: {title}\n\n"
+            f"Article text (first 1500 characters):\n{snippet}\n\n"
+            "Respond with ONLY valid JSON — no markdown, no extra text:\n"
+            '{"niche": "<niche>", "sentiment": "bullish|bearish|neutral",'
+            ' "score": <float -1.0 to 1.0>, "rationale": "<one sentence>"}\n\n'
+            f"Valid niche names (pick exactly one): {', '.join(niche_names)}\n\n"
+            "Scoring rules:\n"
+            "- Routine SEC filings (Form 144, 8-K, 13F), scheduled insider transactions,"
+            " procedural/administrative notices → neutral (score ≈ 0)\n"
+            "- Contract wins, earnings beats, raised guidance, capital investment,"
+            " expansion, acquisitions (for the acquirer) → bullish\n"
+            "- Lawsuits, bankruptcies, missed earnings, layoffs, regulatory crackdowns,"
+            " war/conflict escalation, consumer confidence drops → bearish\n"
+            "- Score magnitude reflects impact: massive contract = +0.8, minor positive = +0.3"
+            " (inverse for bearish)\n"
+            "- Judge impact on investors/consumers, not just literal word tone"
+        )
+
+        response = _claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        raw = response.content[0].text.strip()
+        if "{" in raw:
+            raw = raw[raw.index("{") : raw.rindex("}") + 1]
+        data = json.loads(raw)
+
+        niche = data.get("niche", "Politics & Economy")
+        if niche not in niche_names:
+            niche = "Politics & Economy"
+
+        sentiment = str(data.get("sentiment", "neutral")).lower()
+        score = max(-1.0, min(1.0, float(data.get("score", 0.0))))
+
+        if sentiment == "bullish":
+            sc = {"compound": score, "pos": abs(score), "neg": 0.0, "neu": 0.0}
+        elif sentiment == "bearish":
+            sc = {"compound": score, "pos": 0.0, "neg": abs(score), "neu": 0.0}
+        else:
+            sc = {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": 1.0}
+
+        return niche, sc, "[claude]"
+
+    except Exception as e:
+        print(f"    [!] Claude scoring error — falling back to BART: {e}")
+        niche, _ = classify_niche(title, article_text)
+        return niche, score_sentiment_consumer(article_text or title), "[fallback-bart]"
+
+
 # ── article text fetcher ──────────────────────────────────────────────────────
 
 def fetch_article_text(url: str) -> str | None:
@@ -614,16 +687,15 @@ def main():
     )
 
     # ── 5. Classify niche, score sentiment, collect DB rows ───────────────────
-    print(f"Classifying niches + scoring {len(new_articles)} articles with consumer-framed BART…\n")
+    scorer = "Claude Haiku" if _claude_client else "BART (fallback — no API key)"
+    print(f"Classifying niches + scoring {len(new_articles)} articles via {scorer}…\n")
 
     niche_counts: dict[str, int] = {}
     rows: list[tuple] = []
 
     for i, a in enumerate(new_articles, 1):
-        article_text   = fetch_article_text(a["url"]) or ""
-        text           = article_text or a["title"]   # full content or title for FinBERT
-        niche, method  = classify_niche(a["title"], article_text)
-        sc             = score_sentiment_consumer(text)
+        article_text        = fetch_article_text(a["url"]) or ""
+        niche, sc, method   = score_and_classify_claude(a["title"], article_text)
 
         niche_counts[niche] = niche_counts.get(niche, 0) + 1
 
@@ -639,7 +711,7 @@ def main():
 
         title_preview = a["title"][:70] + "…" if len(a["title"]) > 70 else a["title"]
         print(f"  [{i:3d}/{len(new_articles)}] {title_preview}")
-        print(f"           → {niche}  {method}")
+        print(f"           → {niche}  {method}  compound={sc['compound']:+.2f}")
 
         time.sleep(0.05)
 

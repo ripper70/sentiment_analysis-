@@ -11,6 +11,21 @@ NEWS_API_KEY        = os.environ.get("NEWS_API_KEY", "")
 GUARDIAN_API_KEY    = os.environ.get("GUARDIAN_API_KEY", "")
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY", "")
 
+
+def _load_anthropic_key():
+    # 1. Environment variable (GitHub Actions secret)
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if key:
+        return key
+    # 2. Local gitignored file
+    try:
+        with open(os.path.join(os.path.dirname(__file__), ".anthropic_key")) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+ANTHROPIC_API_KEY = _load_anthropic_key()
+
 NICHES = {
     "Energy & Oil":          ["oil price", "crude oil", "OPEC", "petroleum", "natural gas", "energy prices", "Strait of Hormuz", "Iran oil"],
     "Real Estate":           ["real estate", "housing market", "home prices", "mortgage rates", "housing prices", "home sales", "commercial real estate"],
