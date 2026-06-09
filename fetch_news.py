@@ -15,7 +15,6 @@ import email.utils
 import json
 import os
 import sqlite3
-import threading
 import time
 from datetime import datetime, timezone
 
@@ -27,27 +26,10 @@ from newsapi import NewsApiClient
 from transformers import pipeline
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from anthropic import Anthropic
+import ollama
 
-from config import ANTHROPIC_API_KEY, NEWS_API_KEY
+from config import NEWS_API_KEY
 
-_claude_client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=60.0, max_retries=5) if ANTHROPIC_API_KEY else None
-
-# Rate limiter: cap Claude calls to stay safely under the 50 req/min account limit.
-# 45 req/min = one call every ~1.33s. Shared across all threads.
-_CLAUDE_MIN_INTERVAL = 60.0 / 45.0   # seconds between calls
-_claude_rate_lock = threading.Lock()
-_claude_last_call = [0.0]   # list so it's mutable inside the lock
-
-
-def _claude_rate_limit():
-    """Block until enough time has passed to respect the rate limit."""
-    with _claude_rate_lock:
-        now = time.monotonic()
-        wait = _CLAUDE_MIN_INTERVAL - (now - _claude_last_call[0])
-        if wait > 0:
-            time.sleep(wait)
-        _claude_last_call[0] = time.monotonic()
 
 # ── db config ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -84,6 +66,7 @@ NICHE_LABELS: list[str] = [
     "space exploration, SpaceX, NASA, rockets, satellites",
     "artificial intelligence, machine learning, AI, ChatGPT, OpenAI",
     "politics, government policy, Congress, White House, elections, geopolitics",
+    "aerospace, defense, Boeing, Lockheed, military, fighter jet, missile, satellite defense",
 ]
 
 # Maps each keyword label back to its human-readable canonical niche name.
@@ -104,12 +87,18 @@ NICHE_LABEL_MAP: dict[str, str] = {
     "space exploration, SpaceX, NASA, rockets, satellites": "Space Technology",
     "artificial intelligence, machine learning, AI, ChatGPT, OpenAI": "AI & Machine Learning",
     "politics, government policy, Congress, White House, elections, geopolitics": "Politics & Economy",
+    "aerospace, defense, Boeing, Lockheed, military, fighter jet, missile, satellite defense": "Aerospace & Defense",
 }
 
 # ── high-confidence keyword signals for instant niche assignment ───────────────
 # If ANY keyword phrase appears in (title + first 200 chars of article text),
 # that niche wins immediately — the AI classifier is never called.
 NICHE_KEYWORDS: dict[str, list[str]] = {
+    "Aerospace & Defense": [
+        "Boeing", "Lockheed", "Airbus", "737", "fighter jet", "F-35",
+        "defense contract", "Pentagon contract", "missile", "Raytheon",
+        "Northrop", "military aircraft",
+    ],
     "Energy & Oil": [
         "crude oil", "OPEC", "oil price", "Brent", "WTI", "petroleum",
         "natural gas price", "oil barrel", "Strait of Hormuz", "oil production",
@@ -251,6 +240,24 @@ GOSSIP_BLOCKLIST = [
     "romance", "dating tips", "divorce", "pottery class", "dance class",
     "yoga tips", "beauty tips", "makeup", "skincare routine", "best dressed",
     "outfit ideas",
+]
+
+# ── affiliate / coupon / listicle spam (folded in for Wired/Engadget feeds) ───
+# Matched case-insensitively against the title (see GOSSIP_BLOCKLIST usage).
+# Note: "the best" and "review:" are intentionally aggressive — trim if they
+# start catching legitimate news.
+GOSSIP_BLOCKLIST += [
+    "promo code", "promo codes", "coupon", "coupons", "discount code",
+    "discount codes", "% off", "deals this", "best deals", "deal of the",
+    "gift card", "referral deal", "referral code", "save up to",
+    "early bird ticket", "ticket savings", "flash sale", "prime day",
+    "black friday deal", "cyber monday", "on sale now", "lowest price",
+    "best laptops", "best phones", "best headphones", "best speakers",
+    "best earbuds", "best tvs", "best monitors", "best mattress", "best vpn",
+    "best gifts", "gift guide", "gift ideas", "buying guide", "we tested",
+    "after testing", "hands-on review", "review:", "the best", "our favorite",
+    "top picks", "editor's pick", "amazon deal", "walmart deal",
+    "is now cheaper", "is up to", "off for the first time", "drops to lowest",
 ]
 
 
@@ -496,63 +503,94 @@ def classify_niche(title: str, article_text: str) -> tuple[str, str]:
         return "Politics & Economy", "[AI]"
 
 
-# ── Claude Haiku combined niche + sentiment scoring ───────────────────────────
+# ── Ollama (qwen2.5) combined niche + sentiment scoring ───────────────────────
 
-def score_and_classify_claude(title: str, article_text: str) -> tuple[str, dict, str]:
-    """Classify niche and score investor-reaction sentiment in one Claude Haiku call.
+OLLAMA_MODEL = "qwen2.5:7b"
+
+_OLLAMA_SYSTEM_PROMPT = """You are a financial news sentiment analyst. Judge how an investor would react to a headline.
+
+Assign a sentiment score from -1.0 to +1.0:
+  +0.6 to +1.0 = clearly Bullish (contract wins, earnings beats, upgrades, records)
+  +0.1 to +0.5 = mildly Bullish (modest positives, mixed-but-net-positive)
+   0.0          = truly Indifferent (routine SEC filings, no market signal)
+  -0.1 to -0.5 = mildly Bearish (modest negatives, mixed-but-net-negative)
+  -0.6 to -1.0 = clearly Bearish (misses, downgrades, falling oil for energy, losses)
+
+Rules:
+- Routine SEC filings (Form 144, 13F) score 0.0 / Indifferent unless unusual.
+- Falling oil is Bearish for the energy sector (sector's perspective, not consumer's).
+- Weigh mixed signals: an earnings beat with cut guidance lands small-positive or small-negative.
+- You MUST compute a specific score that matches your reasoning. Do NOT default to 0.0 unless the news is genuinely neutral.
+- Judge market impact from the perspective of an INVESTOR in the relevant sector, not consumer convenience or literal word tone.
+
+Output ONLY valid JSON with these keys: niche, sentiment, score, rationale.
+- "niche" MUST be copied VERBATIM from this exact list — do not invent, rename, abbreviate, or create new categories: {niche_list}
+- If the article does not clearly fit any category, pick the SINGLE closest one from the list above. Never output a category name that is not in the list.
+- "sentiment" MUST be exactly one of: Bullish, Bearish, Indifferent.
+- "score" MUST be a number between -1.0 and 1.0 reflecting intensity."""
+
+
+NICHE_SYNONYMS = {
+    "aerospace & defense": "Aerospace & Defense",
+    "aerospace": "Aerospace & Defense",
+    "defense": "Aerospace & Defense",
+    "automotive": "Electric Vehicles",
+    "autos": "Electric Vehicles",
+    "cryptocurrency": "Bitcoin & Crypto",
+    "crypto": "Bitcoin & Crypto",
+    "energy": "Energy & Oil",
+    "oil & gas": "Energy & Oil",
+    "finance": "Banking & Finance",
+    "markets": "Banking & Finance",
+    "economy": "Politics & Economy",
+    "healthcare": "Healthcare & Biotech",
+    "pharma": "Healthcare & Biotech",
+    "gaming": "Gaming & Esports",
+    "real estate": "Real Estate",
+}
+
+
+def score_and_classify_ollama(title: str, article_text: str) -> tuple[str, dict, str]:
+    """Classify niche and score investor-reaction sentiment in one local qwen2.5 call.
 
     Returns (niche, sentiment_dict, method_string).
     Falls back to classify_niche() + score_sentiment_consumer() on any failure.
     """
-    if _claude_client is None:
-        niche, _ = classify_niche(title, article_text)
-        return niche, score_sentiment_consumer(article_text or title), "[fallback-bart]"
-
+    niche_names = list(NICHE_LABEL_MAP.values())
     try:
-        niche_names = list(NICHE_LABEL_MAP.values())
         snippet = (article_text or title or "")[:1500].strip()
+        system_prompt = _OLLAMA_SYSTEM_PROMPT.format(niche_list=", ".join(niche_names))
 
-        prompt = (
-            f"Article title: {title}\n\n"
-            f"Article text (first 1500 characters):\n{snippet}\n\n"
-            "Respond with ONLY valid JSON — no markdown, no extra text:\n"
-            '{"niche": "<niche>", "sentiment": "bullish|bearish|neutral",'
-            ' "score": <float -1.0 to 1.0>, "rationale": "<one sentence>"}\n\n'
-            f"Valid niche names (pick exactly one): {', '.join(niche_names)}\n\n"
-            "Scoring rules:\n"
-            "- Routine SEC filings (Form 144, 8-K, 13F), scheduled insider transactions,"
-            " procedural/administrative notices → neutral (score ≈ 0)\n"
-            "- Contract wins, earnings beats, raised guidance, capital investment,"
-            " expansion, acquisitions (for the acquirer) → bullish\n"
-            "- Lawsuits, bankruptcies, missed earnings, layoffs, regulatory crackdowns,"
-            " war/conflict escalation, consumer confidence drops → bearish\n"
-            "- Score magnitude reflects impact: massive contract = +0.8, minor positive = +0.3"
-            " (inverse for bearish)\n"
-            "- IMPORTANT — always judge sentiment from the perspective of an INVESTOR in"
-            " the relevant sector or asset: will this likely push related stock/asset"
-            " prices UP (bullish) or DOWN (bearish)? Examples of this frame: falling oil"
-            " prices = bearish for the energy sector; rising interest rates = bearish for"
-            " stocks and bonds; rising wages = can be bearish for corporate margins. Judge"
-            " market impact, not consumer convenience or literal word tone."
+        response = ollama.chat(
+            model=OLLAMA_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": (
+                    f'Headline: "{title}"\n\n'
+                    f'Article text (first 1500 chars):\n{snippet}\n\n'
+                    "Reason about the investor reaction, then output the JSON."
+                )},
+            ],
+            format="json",
+            options={"temperature": 0.3},
         )
 
-        _claude_rate_limit()
-        response = _claude_client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=256,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        data = json.loads(response["message"]["content"])
 
-        raw = response.content[0].text.strip()
-        if "{" in raw:
-            raw = raw[raw.index("{") : raw.rindex("}") + 1]
-        data = json.loads(raw)
-
-        niche = data.get("niche", "Politics & Economy")
+        niche = str(data.get("niche", "")).strip()
         if niche not in niche_names:
-            niche = "Politics & Economy"
+            niche = NICHE_SYNONYMS.get(niche.lower(), "")
+        if niche not in niche_names:
+            niche, _ = classify_niche(title, article_text)
 
-        sentiment = str(data.get("sentiment", "neutral")).lower()
+        sent = str(data.get("sentiment", "")).lower()
+        if "bull" in sent:
+            sentiment = "bullish"
+        elif "bear" in sent:
+            sentiment = "bearish"
+        else:
+            sentiment = "indifferent"
+
         score = max(-1.0, min(1.0, float(data.get("score", 0.0))))
 
         if sentiment == "bullish":
@@ -562,13 +600,12 @@ def score_and_classify_claude(title: str, article_text: str) -> tuple[str, dict,
         else:
             sc = {"compound": 0.0, "pos": 0.0, "neg": 0.0, "neu": 1.0}
 
-        return niche, sc, "[claude]"
+        return niche, sc, "[ollama]"
 
     except Exception as e:
-        print(f"    [!] Claude scoring error — falling back to BART: {e}")
+        print(f"    [!] Ollama scoring error — falling back: {e}")
         niche, _ = classify_niche(title, article_text)
-        return niche, score_sentiment_consumer(article_text or title), "[fallback-bart]"
-
+        return niche, score_sentiment_consumer(article_text or title), "[fallback]"
 
 # ── article text fetcher ──────────────────────────────────────────────────────
 
@@ -714,7 +751,7 @@ def main():
     )
 
     # ── 5. Classify niche, score sentiment, collect DB rows ───────────────────
-    scorer = "Claude Haiku" if _claude_client else "BART (fallback — no API key)"
+    scorer = "Ollama (qwen2.5:7b)"
     print(f"Classifying niches + scoring {len(new_articles)} articles via {scorer}…\n")
 
     niche_counts: dict[str, int] = {}
@@ -722,7 +759,7 @@ def main():
 
     for i, a in enumerate(new_articles, 1):
         article_text        = fetch_article_text(a["url"]) or ""
-        niche, sc, method   = score_and_classify_claude(a["title"], article_text)
+        niche, sc, method   = score_and_classify_ollama(a["title"], article_text)
 
         niche_counts[niche] = niche_counts.get(niche, 0) + 1
 
