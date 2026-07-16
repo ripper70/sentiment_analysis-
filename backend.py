@@ -32,11 +32,19 @@ if USE_POSTGRES:
 # ── app ────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Sentiment Pulse API", version="1.0.0")
 
+# Public read-only API: lock CORS to the live frontend origins, no credentials.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get(
+        "CORS_ORIGINS",
+        "https://sentimentpulse.io,https://www.sentimentpulse.io",
+    ).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
@@ -195,48 +203,13 @@ def get_headlines(
     )
 
 
-_CLEANUP_KEY = "cleanup123"
-
-
-@app.get("/api/cleanup")
-def cleanup_malformed_dates(
-    key: Optional[str] = Query(None, description="Secret key required to run cleanup"),
-):
-    """
-    Delete all headlines whose published value does NOT start with '20'
-    (i.e. old RFC-2822 / non-ISO dates that slipped through before normalisation).
-    Requires ?key=cleanup123.
-    Returns { "deleted": <count> }.
-    """
-    if key != _CLEANUP_KEY:
-        raise HTTPException(status_code=403, detail="Invalid or missing key.")
-
-    deleted = db_execute(
-        "DELETE FROM headlines WHERE published NOT LIKE '20%'", ()
-    )
-    return {"deleted": deleted}
-
-
-@app.get("/api/dedup")
-def dedup_headlines(
-    key: Optional[str] = Query(None, description="Secret key required to run dedup"),
-):
-    """
-    Remove duplicate headlines, keeping only the row with the lowest id for
-    each (title, source) combination.
-    Requires ?key=cleanup123.
-    Returns { "deleted": <count> }.
-    """
-    if key != _CLEANUP_KEY:
-        raise HTTPException(status_code=403, detail="Invalid or missing key.")
-
-    deleted = db_execute(
-        "DELETE FROM headlines WHERE id NOT IN "
-        "(SELECT MIN(id) FROM headlines GROUP BY title, source)"
-    )
-    return {"deleted": deleted}
+# NOTE: the destructive /api/cleanup and /api/dedup GET endpoints were removed.
+# They deleted rows from `headlines` behind a hardcoded key in a PUBLIC repo, i.e.
+# a one-request DB wipe for anyone. Dedup is already enforced by the
+# UNIQUE(title, source) index. Run any one-off maintenance directly via psql.
 
 
 # ── entrypoint ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    uvicorn.run("backend:app", host="0.0.0.0", port=8000, reload=True)
+    # Bind to localhost only; Caddy/nginx terminates TLS and proxies in.
+    uvicorn.run("backend:app", host="127.0.0.1", port=8000, reload=False)
